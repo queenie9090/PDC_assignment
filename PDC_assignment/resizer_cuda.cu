@@ -97,27 +97,52 @@ void resize_image_cuda(
     size_t in_bytes = old_w * old_h * 3 * sizeof(uint8_t);
     size_t out_bytes = new_w * new_h * 3 * sizeof(uint8_t);
 
-    cudaMalloc(&d_in, in_bytes);
-    cudaMalloc(&d_out, out_bytes);
+    // 1. Allocate Device Memory with Error Guarding
+    cudaError_t err = cudaMalloc(&d_in, in_bytes);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Malloc Error (d_in): " << cudaGetErrorString(err) << std::endl;
+        return;
+    }
 
-    cudaMemcpy(d_in, cpu_in, in_bytes, cudaMemcpyHostToDevice);
+    err = cudaMalloc(&d_out, out_bytes);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Malloc Error (d_out): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(d_in);
+        return;
+    }
 
+    // 2. Host to Device Transfer
+    err = cudaMemcpy(d_in, cpu_in, in_bytes, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Memcpy Error (HostToDevice): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(d_in);
+        cudaFree(d_out);
+        return;
+    }
+
+    // 3. Configure Grid and Block Dimensions
     dim3 blockSize(THREADS_PER_BLOCK, THREADS_PER_BLOCK);
     dim3 gridSize((new_w + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK,
         (new_h + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK);
 
+    // 4. Launch Bicubic Kernel
     bicubic_resize_kernel << <gridSize, blockSize >> > (d_out, d_in, old_w, old_h, new_w, new_h);
 
-    // Check for kernel launch errors
-    cudaError_t err = cudaGetLastError();
+    // 5. Check Kernel Errors
+    err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "CUDA Kernel Error: " << cudaGetErrorString(err) << std::endl;
+        std::cerr << "CUDA Kernel Launch Error: " << cudaGetErrorString(err) << std::endl;
     }
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(cpu_out, d_out, out_bytes, cudaMemcpyDeviceToHost);
+    // 6. Device to Host Transfer
+    err = cudaMemcpy(cpu_out, d_out, out_bytes, cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA Memcpy Error (DeviceToHost): " << cudaGetErrorString(err) << std::endl;
+    }
 
+    // 7. Cleanup Device Memory
     cudaFree(d_in);
     cudaFree(d_out);
 }

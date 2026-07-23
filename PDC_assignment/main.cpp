@@ -83,10 +83,16 @@ int main(int argc, char* argv[]) {
         cudaDeviceSynchronize(); // Ensure kernel completes inside function
     }
     else if (mode == "openmp") {
+        // Uncomment once resizer_openmp.h is ready
         // resize_image_openmp(out_img.data, img.data, old_w, old_h, new_w, new_h);
+        std::cerr << "Error: OpenMP mode is not implemented yet.\n";
+        return 1;
     }
     else if (mode == "mpi") {
+        // Uncomment once resizer_mpi.h is ready
         // resize_image_mpi(out_img.data, img.data, old_w, old_h, new_w, new_h);
+        std::cerr << "Error: MPI mode is not implemented yet.\n";
+        return 1;
     }
     else {
         std::cerr << "Error: Unknown mode specified: " << mode << "\n";
