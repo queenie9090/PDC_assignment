@@ -21,12 +21,18 @@
     <ClCompile Include="resizer_baseline.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="resizer_openmp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resizer_cuda.cuh">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="resizer_baseline.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resizer_openmp.h">
       <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>

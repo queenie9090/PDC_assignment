@@ -12,7 +12,7 @@ SCALE_FACTOR = 0.5                              # 50% resize factor
 OUTPUT_CSV = "benchmark_results.csv"
 
 # Active modes to benchmark
-MODES = ["baseline", "cuda"]
+MODES = ["baseline", "cuda", "openmp"]
 
 # Ensure output directory exists
 os.makedirs(OUTPUT_DIR, exist_ok=True)
