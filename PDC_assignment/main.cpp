@@ -7,7 +7,7 @@
 // Include all resizers
 #include "resizer_baseline.h"  // Baseline Sequential
 #include "resizer_cuda.cuh"    // CUDA
-//#include "resizer_openmp.h"  // OpenMP
+#include "resizer_openmp.h"  // OpenMP
 //#include "resizer_mpi.h"     // MPI
 
 int main(int argc, char* argv[]) {
@@ -83,8 +83,7 @@ int main(int argc, char* argv[]) {
         cudaDeviceSynchronize(); // Ensure kernel completes inside function
     }
     else if (mode == "openmp") {
-        // Uncomment once resizer_openmp.h is ready
-        // resize_image_openmp(out_img.data, img.data, old_w, old_h, new_w, new_h);
+        resize_image_openmp(out_img.data, img.data, old_w, old_h, new_w, new_h);
         std::cerr << "Error: OpenMP mode is not implemented yet.\n";
         return 1;
     }

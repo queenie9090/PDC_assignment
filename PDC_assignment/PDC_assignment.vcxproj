@@ -72,8 +72,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Users\W11\opencv\build\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\W11\opencv\build\x64\vc16\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\Downloads\opencv\build\include;C:\Users\W11\opencv\build\include;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\Downloads\opencv\build\x64\vc16\lib;C:\Users\W11\opencv\build\x64\vc16\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>C:\Users\W11\opencv\build\include;$(IncludePath)</IncludePath>
@@ -117,7 +117,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>opencv_world4110.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_world4110d.lib;opencv_world4110.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -138,10 +138,12 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="resizer_baseline.cpp" />
+    <ClCompile Include="resizer_openmp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resizer_cuda.cuh" />
     <ClInclude Include="resizer_baseline.h" />
+    <ClInclude Include="resizer_openmp.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="resizer_cuda.cu" />
