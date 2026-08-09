@@ -12,7 +12,10 @@ SCALE_FACTOR = 0.5                              # 50% resize factor
 OUTPUT_CSV = "benchmark_results.csv"
 
 # Active modes to benchmark
-MODES = ["baseline", "cuda", "openmp"]
+MODES = ["baseline", "cuda", "openmp", "mpi"]
+
+# Number of MPI processes
+MPI_PROCESSES = 4
 
 # Ensure output directory exists
 os.makedirs(OUTPUT_DIR, exist_ok=True)

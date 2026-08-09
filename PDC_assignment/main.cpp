@@ -3,14 +3,24 @@
 #include <string>
 #include <opencv2/opencv.hpp>
 #include <cuda_runtime.h> // Included for cudaDeviceSynchronize safety
+#include <mpi.h>
 
 // Include all resizers
 #include "resizer_baseline.h"  // Baseline Sequential
 #include "resizer_cuda.cuh"    // CUDA
 #include "resizer_openmp.h"  // OpenMP
-//#include "resizer_mpi.h"     // MPI
+#include "resizer_mpi.h"     // MPI
 
 int main(int argc, char* argv[]) {
+
+    MPI_Init(&argc, &argv);
+
+    int rank;
+    int size;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
     // Usage: PDC_assignment.exe <input_path> <output_path> <scale_factor> <mode>
     if (argc < 5) {
         std::cerr << "Error: Missing arguments.\n";
@@ -71,6 +81,10 @@ int main(int argc, char* argv[]) {
         cudaFree(0);
     }
 
+    if (mode == "mpi") {
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
     // 2. Start High-Resolution Timer
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -86,10 +100,8 @@ int main(int argc, char* argv[]) {
         resize_image_openmp(out_img.data, img.data, old_w, old_h, new_w, new_h);
     }
     else if (mode == "mpi") {
-        // Uncomment once resizer_mpi.h is ready
-        // resize_image_mpi(out_img.data, img.data, old_w, old_h, new_w, new_h);
-        std::cerr << "Error: MPI mode is not implemented yet.\n";
-        return 1;
+        resize_image_mpi(out_img.data, img.data, old_w, old_h, new_w, new_h);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
     else {
         std::cerr << "Error: Unknown mode specified: " << mode << "\n";
@@ -109,6 +121,6 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: Failed to write output image to: " << output_path << "\n";
         return 1;
     }
-
+    MPI_Finalize();
     return 0;
 }
