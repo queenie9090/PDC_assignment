@@ -12,7 +12,10 @@ SCALE_FACTOR = 0.5                              # 50% resize factor
 OUTPUT_CSV = "benchmark_results.csv"
 
 # Active modes to benchmark
-MODES = ["baseline", "cuda", "openmp", "mpi"]
+MODES = ["baseline", "cuda","openmp", "mpi"]
+# MODES = ["baseline", "cuda"]
+# MODES = ["baseline", "openmp"]
+# MODES = ["baseline", "mpi"]
 
 # Number of MPI processes
 MPI_PROCESSES = 4
@@ -54,9 +57,10 @@ def run_benchmark():
             "Image": img_name,
             "Original_Width": orig_w,
             "Original_Height": orig_h,
+            "Resolution": f"{orig_w}x{orig_h}",
             "Resized_Width": resized_w,
             "Resized_Height": resized_h,
-            "Megapixels": round(megapixels, 2),
+            "Megapixels": megapixels,
             "Size_KB": round(file_size_kb, 2)
         }
 
