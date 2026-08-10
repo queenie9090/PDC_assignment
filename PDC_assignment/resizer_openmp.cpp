@@ -3,7 +3,6 @@
 #include <cmath>
 #include <omp.h>
 
-// Same bicubic weight function as the baseline version
 static float cubic_weight_openmp(float x)
 {
     x = std::fabs(x);
@@ -51,8 +50,6 @@ void resize_image_openmp(
         static_cast<float>(old_h) / static_cast<float>(new_h);
 
     /*
-        Each thread receives different output rows.
-
         Shared:
         - cpu_out
         - cpu_in
@@ -67,9 +64,8 @@ void resize_image_openmp(
         - colour sums
         - loop variables m and n
         - offsets and weights
-
-        Variables declared inside the loop are automatically private.
     */
+
 #pragma omp parallel for schedule(static)
     for (int y = 0; y < new_h; ++y) {
 
