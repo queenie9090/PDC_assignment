@@ -8,15 +8,15 @@ DATASET_DIR = "./dataset_ordered"
 OUTPUT_DIR = "./output_images"
 EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
 
-SCALE_DOWN = 0.5
+#SCALE_DOWN = 0.5
 SCALE_UP = 1.5
 
-OUTPUT_CSV_DOWN = "benchmark_downscale.csv"
+#OUTPUT_CSV_DOWN = "benchmark_downscale.csv"
 OUTPUT_CSV_UP = "benchmark_upscale.csv"
 
-MODES = ["baseline", "cuda"]
-# MODES = ["baseline", "openmp"]
-# MODES = ["baseline", "mpi"]
+#MODES = ["baseline", "cuda"]
+#MODES = ["baseline", "openmp"]
+MODES = ["baseline", "openmp", "mpi"]
 
 MPI_PROCESSES = 4
 
@@ -440,11 +440,11 @@ def run_benchmark(
 
 if __name__ == "__main__":
 
-    run_benchmark(
-        SCALE_DOWN,
-        OUTPUT_CSV_DOWN,
-        "DOWNSCALE"
-    )
+    # run_benchmark(
+    #     SCALE_DOWN,
+    #     OUTPUT_CSV_DOWN,
+    #     "DOWNSCALE"
+    # )
 
     run_benchmark(
         SCALE_UP,
