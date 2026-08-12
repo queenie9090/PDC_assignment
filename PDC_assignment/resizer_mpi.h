@@ -5,7 +5,7 @@
 
 void resize_image_mpi(
     uint8_t* cpu_out,
-    const uint8_t* cpu_in,
+    uint8_t* cpu_in,
     int old_w,
     int old_h,
     int new_w,

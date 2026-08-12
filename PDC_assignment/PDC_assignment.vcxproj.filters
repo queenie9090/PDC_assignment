@@ -24,6 +24,9 @@
     <ClCompile Include="resizer_openmp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="resizer_mpi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resizer_cuda.cuh">
@@ -34,6 +37,9 @@
     </ClInclude>
     <ClInclude Include="resizer_openmp.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resizer_mpi.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
