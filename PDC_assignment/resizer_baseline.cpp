@@ -15,10 +15,23 @@ static float cubic_weight(float x) {
     return 0.0f;
 }
 
+/*
 static uint8_t clamp_pixel(float val) {
     if (val < 0.0f) return 0;
     if (val > 255.0f) return 255;
     return static_cast<uint8_t>(val);
+}
+*/
+
+static uint8_t clamp_pixel(float val)
+{
+    if (val <= 0.0f)
+        return 0;
+
+    if (val >= 255.0f)
+        return 255;
+
+    return static_cast<uint8_t>(std::lround(val));
 }
 
 void resize_image_sequential(
