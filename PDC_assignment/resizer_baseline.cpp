@@ -1,37 +1,41 @@
 #include "resizer_baseline.h"
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 
-// Standard Bicubic Spline Weight Function
-static float cubic_weight(float x) {
+// OpenCV's cubic spline kernel uses a = -0.75f
+static inline float cubic_weight(float x) {
     x = std::fabs(x);
-    float a = -0.5f;
+    const float a = -0.75f;
     if (x <= 1.0f) {
-        return (a + 2.0f) * (x * x * x) - (a + 3.0f) * (x * x) + 1.0f;
+        return (a + 2.0f) * x * x * x - (a + 3.0f) * x * x + 1.0f;
     }
     else if (x < 2.0f) {
-        return a * (x * x * x) - 5.0f * a * (x * x) + 8.0f * a * x - 4.0f * a;
+        return a * x * x * x - 5.0f * a * x * x + 8.0f * a * x - 4.0f * a;
     }
     return 0.0f;
 }
 
-/*
-static uint8_t clamp_pixel(float val) {
-    if (val < 0.0f) return 0;
-    if (val > 255.0f) return 255;
-    return static_cast<uint8_t>(val);
+// OpenCV border reflection mode: BORDER_REFLECT_101
+static inline int reflect_101(int p, int len) {
+    if (len <= 1) return 0;
+    while (p < 0 || p >= len) {
+        if (p < 0) {
+            p = -p;
+        }
+        else if (p >= len) {
+            p = 2 * len - 2 - p;
+        }
+    }
+    return p;
 }
-*/
 
-static uint8_t clamp_pixel(float val)
-{
-    if (val <= 0.0f)
-        return 0;
-
-    if (val >= 255.0f)
-        return 255;
-
-    return static_cast<uint8_t>(std::lround(val));
+// C++11 compatible clamp implementation
+static inline uint8_t clamp_pixel(float val) {
+    long rounded = std::lround(val);
+    if (rounded < 0) return 0;
+    if (rounded > 255) return 255;
+    return static_cast<uint8_t>(rounded);
 }
 
 void resize_image_sequential(
@@ -48,42 +52,42 @@ void resize_image_sequential(
         int iy = (int)std::floor(src_y);
         float v = src_y - iy;
 
+        // Precompute vertical weights for this row
+        float wy[4];
+        wy[0] = cubic_weight(v + 1.0f);
+        wy[1] = cubic_weight(v);
+        wy[2] = cubic_weight(1.0f - v);
+        wy[3] = cubic_weight(2.0f - v);
+
         for (int x = 0; x < new_w; ++x) {
             float src_x = ((float)x + 0.5f) * x_ratio - 0.5f;
             int ix = (int)std::floor(src_x);
             float u = src_x - ix;
 
+            // Precompute horizontal weights for this pixel
+            float wx[4];
+            wx[0] = cubic_weight(u + 1.0f);
+            wx[1] = cubic_weight(u);
+            wx[2] = cubic_weight(1.0f - u);
+            wx[3] = cubic_weight(2.0f - u);
+
             float b_sum = 0.0f, g_sum = 0.0f, r_sum = 0.0f;
-            float total_weight = 0.0f;
 
             // 4x4 Grid sampling (16 pixels)
-            for (int m = -1; m <= 2; ++m) {
-                float wy = cubic_weight(v - (float)m);
-                int py = iy + m;
-                if (py < 0) py = 0;
-                if (py >= old_h) py = old_h - 1;
+            for (int m = 0; m < 4; ++m) {
+                int py = reflect_101(iy + m - 1, old_h);
+                float weight_y = wy[m];
 
-                for (int n = -1; n <= 2; ++n) {
-                    float wx = cubic_weight(u - (float)n);
-                    int px = ix + n;
-                    if (px < 0) px = 0;
-                    if (px >= old_w) px = old_w - 1;
+                for (int n = 0; n < 4; ++n) {
+                    int px = reflect_101(ix + n - 1, old_w);
+                    float weight = weight_y * wx[n];
 
-                    float weight = wx * wy;
                     int old_offset = (py * old_w + px) * 3;
 
                     b_sum += cpu_in[old_offset + 0] * weight;
                     g_sum += cpu_in[old_offset + 1] * weight;
                     r_sum += cpu_in[old_offset + 2] * weight;
-
-                    total_weight += weight;
                 }
-            }
-
-            if (total_weight > 0.0f) {
-                b_sum /= total_weight;
-                g_sum /= total_weight;
-                r_sum /= total_weight;
             }
 
             int new_offset = (y * new_w + x) * 3;
