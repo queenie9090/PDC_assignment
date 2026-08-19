@@ -48,7 +48,14 @@
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="run_tests.py">
+    <None Include="run_test_cuda.py">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="app.py" />
+    <None Include="run_test_omp.py">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="run_test_mpi.py">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
