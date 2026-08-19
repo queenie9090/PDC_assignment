@@ -11,7 +11,7 @@ EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
 SCALE_DOWN = 0.5
 SCALE_UP = 1.5
 
-TARGET_BACKEND = "openmp"
+TARGET_BACKEND = "baseline"
 
 if TARGET_BACKEND == "all":
     MODES = ["baseline", "cuda", "openmp", "mpi"]

@@ -15,19 +15,18 @@ TARGET_BACKEND = "mpi"
 
 if TARGET_BACKEND == "all":
     MODES = ["baseline", "cuda", "openmp", "mpi"]
-elif TARGET_BACKEND == "baseline":
-    MODES = ["baseline"]
 else:
-    MODES = ["baseline", TARGET_BACKEND]
+    MODES = [TARGET_BACKEND]
 
 MPI_NPROCS = 4
 
+# Single combined CSV filename per scale factor
 OUTPUT_CSV_DOWN = (
-    f"benchmark_downscale_{SCALE_DOWN}x_{TARGET_BACKEND}.csv"
+    f"benchmark_downscale_{SCALE_DOWN}x.csv"
 )
 
 OUTPUT_CSV_UP = (
-    f"benchmark_upscale_{SCALE_UP}x_{TARGET_BACKEND}.csv"
+    f"benchmark_upscale_{SCALE_UP}x.csv"
 )
 
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png")
@@ -173,6 +172,17 @@ def run_benchmark(
         )
         return
 
+    # Load existing CSV if present to merge new columns
+    existing_data = {}
+    if os.path.exists(output_csv):
+        try:
+            old_df = pd.read_csv(output_csv)
+            old_df = old_df.where(pd.notnull(old_df), None)
+            existing_data = old_df.set_index("Image").to_dict(orient="index")
+            print(f"Loaded existing data from {output_csv}")
+        except Exception as e:
+            print(f"Could not load existing CSV: {e}")
+
     print("=" * 60)
     print(
         f"{benchmark_name} BENCHMARK "
@@ -227,28 +237,33 @@ def run_benchmark(
             f"{resized_w}x{resized_h}"
         )
 
-        row_data = {
-            "Image": img_name,
-            "Original_Width": orig_w,
-            "Original_Height": orig_h,
-            "Original_Resolution":
-                f"{orig_w}x{orig_h}",
-            "Output_Width": resized_w,
-            "Output_Height": resized_h,
-            "Output_Resolution":
-                f"{resized_w}x{resized_h}",
-            "Channels": info["channels"],
-            "Megapixels":
-                round(info["megapixels"], 3),
-            "Raw_Size_Bytes":
-                info["raw_bytes"],
-            "Input_Image_Size_MB":
-                round(info["raw_mb"], 3),
-            "Compressed_File_Size_KB":
-                round(info["compressed_kb"], 2),
-            "Scale_Factor":
-                scale_factor
-        }
+        # Reuse existing row data if image was processed in a prior run
+        if img_name in existing_data:
+            row_data = existing_data[img_name]
+            row_data["Image"] = img_name
+        else:
+            row_data = {
+                "Image": img_name,
+                "Original_Width": orig_w,
+                "Original_Height": orig_h,
+                "Original_Resolution":
+                    f"{orig_w}x{orig_h}",
+                "Output_Width": resized_w,
+                "Output_Height": resized_h,
+                "Output_Resolution":
+                    f"{resized_w}x{resized_h}",
+                "Channels": info["channels"],
+                "Megapixels":
+                    round(info["megapixels"], 3),
+                "Raw_Size_Bytes":
+                    info["raw_bytes"],
+                "Input_Image_Size_MB":
+                    round(info["raw_mb"], 3),
+                "Compressed_File_Size_KB":
+                    round(info["compressed_kb"], 2),
+                "Scale_Factor":
+                    scale_factor
+            }
 
         for mode in MODES:
             output_name = (
@@ -292,34 +307,29 @@ def run_benchmark(
                     flush=True
                 )
 
-        baseline_time = row_data.get(
-            "baseline_ms"
-        )
+        # Calculate speedup for all recorded modes using baseline_ms
+        baseline_time = row_data.get("baseline_ms")
 
         if (
             baseline_time is not None
             and baseline_time > 0
         ):
-            for mode in MODES:
-                if mode != "baseline":
-                    mode_time = row_data.get(
-                        f"{mode}_ms"
-                    )
+            # Check all existing timing columns in row_data
+            for key in list(row_data.keys()):
+                if key.endswith("_ms") and key != "baseline_ms":
+                    m_name = key[:-3]
+                    m_time = row_data[key]
 
                     if (
-                        mode_time is not None
-                        and mode_time > 0
+                        m_time is not None
+                        and m_time > 0
                     ):
                         row_data[
-                            f"{mode}_speedup"
+                            f"{m_name}_speedup"
                         ] = round(
-                            baseline_time / mode_time,
+                            baseline_time / m_time,
                             3
                         )
-                    else:
-                        row_data[
-                            f"{mode}_speedup"
-                        ] = None
 
         results.append(row_data)
 
