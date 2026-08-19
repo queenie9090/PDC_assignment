@@ -10,7 +10,6 @@
 #include "resizer_openmp.h"
 #include "resizer_mpi.h"
 
-
 int main(int argc, char* argv[])
 {
     // MPI INITIALIZATION
@@ -21,13 +20,13 @@ int main(int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // CHECK ARGUMENTS
-    if (argc < 5)
+    // CHECK ARGUMENTS (Now expects 6 args: exe, input, output, new_w, new_h, mode)
+    if (argc < 6)
     {
         if (rank == 0)
         {
             std::cerr << "Error: Missing arguments.\n";
-            std::cerr << "Usage: " << argv[0] << " <input> <output> <scale> <mode>\n";
+            std::cerr << "Usage: " << argv[0] << " <input> <output> <new_w> <new_h> <mode>\n";
         }
 
         MPI_Finalize();
@@ -36,51 +35,48 @@ int main(int argc, char* argv[])
 
     std::string input_path = argv[1];
     std::string output_path = argv[2];
-    float scale = 0.0f;
+    int new_w = 0;
+    int new_h = 0;
 
     // CHECK PATH
-    if (input_path.empty() ||
-        output_path.empty())
+    if (input_path.empty() || output_path.empty())
     {
         if (rank == 0)
         {
-            std::cerr  << "Error: Input or Output " << "file path is empty!\n";
+            std::cerr << "Error: Input or Output file path is empty!\n";
         }
 
         MPI_Finalize();
         return 1;
     }
 
-    // READ SCALE
+    // READ TARGET DIMENSIONS DIRECTLY
     try
     {
-        scale = std::stof(argv[3]);
+        new_w = std::stoi(argv[3]);
+        new_h = std::stoi(argv[4]);
     }
     catch (const std::exception& e)
     {
         if (rank == 0)
         {
-            std::cerr << "Error: Invalid scale factor '" << argv[3] << "': "  << e.what() << "\n";
+            std::cerr << "Error: Invalid output dimensions: " << e.what() << "\n";
         }
 
         MPI_Finalize();
         return 1;
     }
 
-    std::string mode = argv[4];
+    std::string mode = argv[5];
 
     // LOAD IMAGE
-    // Every MPI process loads the complete input image.
-    // This means every process has access to every source pixel.
-    // Therefore, halo exchange is NOT required in this design.
-
     cv::Mat img = cv::imread(input_path, cv::IMREAD_COLOR);
 
     if (img.empty())
     {
         if (rank == 0)
         {
-            std::cerr << "Error: Could not load input image: "  << input_path << "\n";
+            std::cerr << "Error: Could not load input image: " << input_path << "\n";
         }
 
         MPI_Finalize();
@@ -90,16 +86,13 @@ int main(int argc, char* argv[])
     // IMAGE DIMENSIONS
     int old_w = img.cols;
     int old_h = img.rows;
-    int new_w = std::max( 1, static_cast<int>(old_w * scale));
-    int new_h = std::max(1, static_cast<int>( old_h * scale));
 
     // CHECK OUTPUT DIMENSIONS
-    if (new_w <= 0 ||
-        new_h <= 0)
+    if (new_w <= 0 || new_h <= 0)
     {
         if (rank == 0)
         {
-            std::cerr  << "Error: Invalid output dimensions: "  << new_w << "x" << new_h << "\n";
+            std::cerr << "Error: Invalid output dimensions: " << new_w << "x" << new_h << "\n";
         }
 
         MPI_Finalize();
@@ -113,9 +106,7 @@ int main(int argc, char* argv[])
     }
 
     // CREATE OUTPUT IMAGE
-    cv::Mat out_img =
-        cv::Mat::zeros(new_h, new_w, CV_8UC3 );
-
+    cv::Mat out_img = cv::Mat::zeros(new_h, new_w, CV_8UC3);
 
     if (!out_img.isContinuous())
     {
@@ -135,39 +126,27 @@ int main(int argc, char* argv[])
     }
 
     // START TIMER
-
     auto start = std::chrono::high_resolution_clock::now();
 
     // SELECT ALGORITHM
-
     if (mode == "baseline")
     {
         resize_image_sequential(out_img.data, img.data, old_w, old_h, new_w, new_h);
     }
-
-
     else if (mode == "cuda")
     {
         resize_image_cuda(out_img.data, img.data, old_w, old_h, new_w, new_h);
         cudaDeviceSynchronize();
     }
-
-
     else if (mode == "openmp")
     {
         resize_image_openmp(out_img.data, img.data, old_w, old_h, new_w, new_h);
     }
-
-
     else if (mode == "mpi")
     {
         resize_image_mpi(out_img.data, img.data, old_w, old_h, new_w, new_h);
-
-        // Wait for all processes after gathering
         MPI_Barrier(MPI_COMM_WORLD);
     }
-
-
     else
     {
         if (rank == 0)
@@ -180,28 +159,17 @@ int main(int argc, char* argv[])
     }
 
     // STOP TIMER
-
     auto end = std::chrono::high_resolution_clock::now();
 
-    double duration_ms =
-        std::chrono::duration<double, std::milli>(
-            end - start
-        ).count();
+    double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
     // ONLY RANK 0 PRINTS TIME
-
     if (rank == 0)
     {
-        std::cout
-            << "TIME_MS:"
-            << duration_ms
-            << std::endl;
+        std::cout << "TIME_MS:" << duration_ms << std::endl;
     }
 
     // ONLY RANK 0 SAVES OUTPUT
-    // THIS IS CRITICAL.
-    // Rank 1/2/3 must NOT write the image.
-
     if (rank == 0)
     {
         bool saved = cv::imwrite(output_path, out_img);
