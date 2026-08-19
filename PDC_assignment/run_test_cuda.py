@@ -11,10 +11,24 @@ EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
 SCALE_DOWN = 0.5
 SCALE_UP = 1.5
 
-OUTPUT_CSV_DOWN = "benchmark_downscale_cuda.csv"
-OUTPUT_CSV_UP = "benchmark_upscale_cuda.csv"
+TARGET_BACKEND = "cuda"
 
-MODES = ["baseline", "cuda"]
+if TARGET_BACKEND == "all":
+    MODES = ["baseline", "cuda", "openmp", "mpi"]
+elif TARGET_BACKEND == "baseline":
+    MODES = ["baseline"]
+else:
+    MODES = ["baseline", TARGET_BACKEND]
+
+MPI_NPROCS = 4
+
+OUTPUT_CSV_DOWN = (
+    f"benchmark_downscale_{SCALE_DOWN}x_{TARGET_BACKEND}.csv"
+)
+
+OUTPUT_CSV_UP = (
+    f"benchmark_upscale_{SCALE_UP}x_{TARGET_BACKEND}.csv"
+)
 
 SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png")
 
@@ -67,15 +81,24 @@ def run_program(
     mode,
     img_path,
     output_path,
-    scale_factor
+    resized_w,
+    resized_h
 ):
     command = [
         EXE_PATH,
         img_path,
         output_path,
-        str(scale_factor),
+        str(resized_w),
+        str(resized_h),
         mode
     ]
+
+    if mode == "mpi":
+        command = [
+            "mpiexec",
+            "-n",
+            str(MPI_NPROCS)
+        ] + command
 
     try:
         process = subprocess.run(
@@ -104,7 +127,6 @@ def run_program(
 
     except subprocess.CalledProcessError as e:
         print(f"Error executing {mode}:")
-        print(e)
 
         if e.stdout:
             print(f"stdout: {e.stdout}")
@@ -152,12 +174,20 @@ def run_benchmark(
         return
 
     print("=" * 60)
-    print(f"{benchmark_name} BENCHMARK")
+    print(
+        f"{benchmark_name} BENCHMARK "
+        f"[{TARGET_BACKEND.upper()}]"
+    )
     print("=" * 60)
     print(f"Dataset      : {DATASET_DIR}")
     print(f"Images       : {len(images)}")
-    print(f"Scale factor : {scale_factor}")
+    print(f"Scale factor : {scale_factor}x")
     print(f"Modes        : {', '.join(MODES)}")
+
+    if "mpi" in MODES:
+        print(f"MPI Ranks    : {MPI_NPROCS}")
+
+    print(f"Output CSV   : {output_csv}")
     print("=" * 60)
     print()
 
@@ -170,16 +200,6 @@ def run_benchmark(
         img_path = os.path.join(
             DATASET_DIR,
             img_name
-        )
-
-        output_name = (
-            f"{benchmark_name.lower()}_"
-            f"{os.path.splitext(img_name)[0]}.png"
-        )
-
-        out_path = os.path.join(
-            OUTPUT_DIR,
-            output_name
         )
 
         info = get_image_information(img_path)
@@ -231,6 +251,18 @@ def run_benchmark(
         }
 
         for mode in MODES:
+            output_name = (
+                f"{benchmark_name.lower()}_"
+                f"{scale_factor}x_"
+                f"{mode}_"
+                f"{os.path.splitext(img_name)[0]}.png"
+            )
+
+            out_path = os.path.join(
+                OUTPUT_DIR,
+                output_name
+            )
+
             print(
                 f"    Running {mode}...",
                 flush=True
@@ -240,41 +272,63 @@ def run_benchmark(
                 mode,
                 img_path,
                 out_path,
-                scale_factor
-            )
-
-            print(
-                f"    {mode} finished: "
-                f"{execution_time} ms",
-                flush=True
+                resized_w,
+                resized_h
             )
 
             if execution_time is not None:
                 row_data[f"{mode}_ms"] = execution_time
-            else:
-                row_data[f"{mode}_ms"] = None
-                print(f"{mode} FAILED")
 
-        baseline_time = row_data.get("baseline_ms")
-
-        if baseline_time is not None and baseline_time > 0:
-
-            cuda_time = row_data.get("cuda_ms")
-
-            if cuda_time is not None and cuda_time > 0:
-                row_data["cuda_speedup"] = round(
-                    baseline_time / cuda_time,
-                    3
+                print(
+                    f"    {mode} finished: "
+                    f"{execution_time} ms",
+                    flush=True
                 )
             else:
-                row_data["cuda_speedup"] = None
+                row_data[f"{mode}_ms"] = None
+
+                print(
+                    f"    {mode} FAILED",
+                    flush=True
+                )
+
+        baseline_time = row_data.get(
+            "baseline_ms"
+        )
+
+        if (
+            baseline_time is not None
+            and baseline_time > 0
+        ):
+            for mode in MODES:
+                if mode != "baseline":
+                    mode_time = row_data.get(
+                        f"{mode}_ms"
+                    )
+
+                    if (
+                        mode_time is not None
+                        and mode_time > 0
+                    ):
+                        row_data[
+                            f"{mode}_speedup"
+                        ] = round(
+                            baseline_time / mode_time,
+                            3
+                        )
+                    else:
+                        row_data[
+                            f"{mode}_speedup"
+                        ] = None
 
         results.append(row_data)
 
         print()
 
     if not results:
-        print("No benchmark results were generated.")
+        print(
+            "No benchmark results were generated."
+        )
         return
 
     dataframe = pd.DataFrame(results)
@@ -287,8 +341,12 @@ def run_benchmark(
     print("=" * 60)
     print(f"{benchmark_name} COMPLETE")
     print("=" * 60)
-    print(f"Results saved to: {output_csv}")
-    print(f"Images processed: {len(results)}")
+    print(
+        f"Results saved to: {output_csv}"
+    )
+    print(
+        f"Images processed: {len(results)}"
+    )
     print()
 
 
