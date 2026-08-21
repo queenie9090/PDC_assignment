@@ -312,19 +312,12 @@ if st.button("Resize Image", type="primary", use_container_width=True):
             st.stop()
 
         # 2. Run OpenCV Bicubic Benchmark
-        start_cv = time.perf_counter()
         opencv_resized_bgr = cv2.resize(image_bgr, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-        end_cv = time.perf_counter()
-        opencv_time_ms = (end_cv - start_cv) * 1000.0
 
         # 3. Fetch Baseline Image (Run Baseline if chosen mode wasn't baseline)
-        baseline_time_ms = execution_time if mode == "baseline" else None
         if mode != "baseline":
             base_cmd = [EXE_PATH, input_path, baseline_path, str(new_width), str(new_height), "baseline"]
-            base_proc = subprocess.run(base_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
-            match_base = re.search(r"TIME_MS:\s*([\d.]+)", base_proc.stdout)
-            if match_base:
-                baseline_time_ms = float(match_base.group(1))
+            subprocess.run(base_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
         else:
             cv2.imwrite(baseline_path, cv2.imread(output_path))
 
@@ -332,8 +325,6 @@ if st.button("Resize Image", type="primary", use_container_width=True):
         st.session_state["output_path"] = output_path
         st.session_state["baseline_path"] = baseline_path
         st.session_state["execution_time"] = execution_time
-        st.session_state["baseline_time_ms"] = baseline_time_ms
-        st.session_state["opencv_time_ms"] = opencv_time_ms
         st.session_state["opencv_img_rgb"] = cv2.cvtColor(opencv_resized_bgr, cv2.COLOR_BGR2RGB)
         st.session_state["mode"] = mode
         st.session_state["stdout"] = process.stdout
@@ -396,15 +387,12 @@ if st.session_state.get("has_run", False):
         st.error(f"Unable to display output image: {e}")
 
     # -------------------------------------------------------------
-    # SECTION 2: OPENCV VS C++ BASELINE ALGORITHM COMPARISON
+    # SECTION 2: OPENCV VS C++ BASELINE IMAGE COMPARISON
     # -------------------------------------------------------------
     st.divider()
-    st.header("OpenCV vs C++ Baseline Algorithm Comparison")
-    st.write("Evaluating performance and pixel-level quality differences between OpenCV's `cv2.resize` (INTER_CUBIC) and our custom C++ Baseline implementation.")
+    st.header("OpenCV vs C++ Baseline Image Comparison")
 
     baseline_path = st.session_state.get("baseline_path")
-    baseline_time_ms = st.session_state.get("baseline_time_ms")
-    opencv_time_ms = st.session_state.get("opencv_time_ms")
     opencv_img_rgb = st.session_state.get("opencv_img_rgb")
 
     try:
@@ -414,43 +402,6 @@ if st.session_state.get("has_run", False):
         b_h, b_w = baseline_img_rgb.shape[:2]
         o_h, o_w = opencv_img_rgb.shape[:2]
 
-        # Performance Metrics
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("OpenCV Execution Time", f"{opencv_time_ms:.3f} ms")
-        with m2:
-            st.metric("C++ Baseline Execution Time", f"{baseline_time_ms:.3f} ms" if baseline_time_ms else "N/A")
-        with m3:
-            if baseline_time_ms and opencv_time_ms > 0:
-                speedup = baseline_time_ms / opencv_time_ms
-                st.metric("OpenCV Speedup over Baseline", f"{speedup:.2f}x")
-
-        # Pixel Difference Metrics
-        diff = cv2.absdiff(baseline_img_rgb, opencv_img_rgb)
-        mean_diff = np.mean(diff)
-        max_diff = np.max(diff)
-
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            st.metric("Mean Pixel Difference (MAE)", f"{mean_diff:.3f} / 255")
-        with col_d2:
-            st.metric("Max Channel Difference", f"{max_diff} / 255")
-
-        if mean_diff < 1.0:
-            st.success("The C++ baseline and OpenCV algorithms yield practically identical visual results.")
-        else:
-            st.info("Minor numerical discrepancies exist between implementation boundary values/coefficients.")
-
-        # Absolute Difference Heatmap
-        st.subheader("Pixel Difference Map (Heatmap)")
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY)
-        heatmap = cv2.applyColorMap(gray_diff * 5, cv2.COLORMAP_JET)  # Brightened 5x for visual clarity
-        heatmap_rgb = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
-        
-        st.image(heatmap_rgb, caption="Difference Map (Warmer colors = higher pixel discrepancy)", use_container_width=True)
-
-        # Visual Comparison Viewer
-        st.subheader("Side-by-Side Visual Comparison")
         cv_b64 = image_to_base64(opencv_img_rgb)
         base_b64 = image_to_base64(baseline_img_rgb)
 
