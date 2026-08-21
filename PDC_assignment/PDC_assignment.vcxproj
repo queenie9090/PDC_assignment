@@ -155,7 +155,10 @@
     <CudaCompile Include="resizer_cuda.cu" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="run_tests.py" />
+    <None Include="run_test_baseline.py" />
+    <None Include="run_test_cuda.py" />
+    <None Include="run_test_mpi.py" />
+    <None Include="run_test_omp.py" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
