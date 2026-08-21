@@ -16,28 +16,24 @@ static inline int clamp_int(int v, int lo, int hi)
     return (v < lo) ? lo : ((v > hi) ? hi : v);
 }
 
-static inline uint8_t clamp_pixel_fast(float v)
+static inline uint8_t clamp_pixel(float val)
 {
-    if (v <= 0.0f) return 0;
-    if (v >= 255.0f) return 255;
-    return static_cast<uint8_t>(v + 0.5f);
+    if (val <= 0.0f) return 0;
+    if (val >= 255.0f) return 255;
+    return static_cast<uint8_t>(val + 0.5f);
 }
 
-// Catmull-Rom bicubic kernel
-static inline float cubic_weight_mpi(float x)
+// Catmull-Rom style bicubic spline kernel
+static inline float cubic_weight(float x)
 {
     x = std::fabs(x);
     constexpr float a = -0.75f;
 
     if (x <= 1.0f)
-    {
         return (a + 2.0f) * x * x * x - (a + 3.0f) * x * x + 1.0f;
-    }
 
     if (x < 2.0f)
-    {
         return a * x * x * x - 5.0f * a * x * x + 8.0f * a * x - 4.0f * a;
-    }
 
     return 0.0f;
 }
@@ -54,9 +50,9 @@ struct YWeights
     float weight[4];
 };
 
-void resize_image_mpi_io(
-    const char* input_filename,
-    const char* output_filename,
+void resize_image_mpi(
+    uint8_t* RESTRICT cpu_out,
+    uint8_t* RESTRICT cpu_in,
     int old_w,
     int old_h,
     int new_w,
@@ -70,6 +66,8 @@ void resize_image_mpi_io(
 
     const float x_ratio = static_cast<float>(old_w) / static_cast<float>(new_w);
     const float y_ratio = static_cast<float>(old_h) / static_cast<float>(new_h);
+    const int input_row_bytes = old_w * 3;
+    const int output_row_bytes = new_w * 3;
 
     // Divide output rows among MPI processes
     const int base_rows = new_h / size;
@@ -77,73 +75,108 @@ void resize_image_mpi_io(
     const int output_rows = base_rows + (rank < extra_rows ? 1 : 0);
     const int output_start = rank * base_rows + std::min(rank, extra_rows);
 
-    // Calculate source rows required by THIS process
-    int my_src_min = 0;
-    int my_src_max = -1;
+    // Calculate source rows required by each process
+    std::vector<int> src_min(size);
+    std::vector<int> src_max(size);
+    std::vector<int> src_rows(size);
+    std::vector<int> scatter_counts(size);
+    std::vector<int> scatter_displacements(size);
 
-    if (output_rows > 0)
+    for (int r = 0; r < size; ++r)
     {
-        const float y_first = (static_cast<float>(output_start) + 0.5f) * y_ratio - 0.5f;
+        const int r_output_rows = base_rows + (r < extra_rows ? 1 : 0);
+        const int r_output_start = r * base_rows + std::min(r, extra_rows);
+
+        if (r_output_rows == 0)
+        {
+            src_min[r] = 0;
+            src_max[r] = -1;
+            src_rows[r] = 0;
+            scatter_counts[r] = 0;
+            scatter_displacements[r] = 0;
+            continue;
+        }
+
+        const float y_first = (static_cast<float>(r_output_start) + 0.5f) * y_ratio - 0.5f;
         const int iy_first = static_cast<int>(std::floor(y_first));
 
-        const int output_end = output_start + output_rows - 1;
-        const float y_last = (static_cast<float>(output_end) + 0.5f) * y_ratio - 0.5f;
+        const int r_output_end = r_output_start + r_output_rows - 1;
+        const float y_last = (static_cast<float>(r_output_end) + 0.5f) * y_ratio - 0.5f;
         const int iy_last = static_cast<int>(std::floor(y_last));
 
-        my_src_min = clamp_int(iy_first - 1, 0, old_h - 1);
-        my_src_max = clamp_int(iy_last + 2, 0, old_h - 1);
+        src_min[r] = clamp_int(iy_first - 1, 0, old_h - 1);
+        src_max[r] = clamp_int(iy_last + 2, 0, old_h - 1);
+        src_rows[r] = src_max[r] - src_min[r] + 1;
+        scatter_counts[r] = src_rows[r] * input_row_bytes;
+        scatter_displacements[r] = src_min[r] * input_row_bytes;
     }
 
-    const int my_src_rows = my_src_max - my_src_min + 1;
-    const int input_row_bytes = old_w * 3;
-    const size_t local_input_bytes = static_cast<size_t>(my_src_rows) * static_cast<size_t>(input_row_bytes);
+    const int my_src_start = src_min[rank];
+    const int my_src_rows = src_rows[rank];
+
+    const size_t local_input_bytes = static_cast<size_t>(my_src_rows) * input_row_bytes;
 
     std::vector<uint8_t> local_input(local_input_bytes);
 
-    // --- 1. MPI-IO READ ---
-    MPI_File fh_in;
-    MPI_File_open(MPI_COMM_WORLD, input_filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &fh_in);
+    // Distribute only the input rows needed by each process
+    MPI_Scatterv(
+        cpu_in,
+        scatter_counts.data(),
+        scatter_displacements.data(),
+        MPI_UNSIGNED_CHAR,
+        local_input.empty() ? nullptr : local_input.data(),
+        static_cast<int>(local_input_bytes),
+        MPI_UNSIGNED_CHAR,
+        0,
+        MPI_COMM_WORLD);
 
-    if (output_rows > 0)
-    {
-        MPI_Offset read_offset = static_cast<MPI_Offset>(my_src_min) * input_row_bytes;
-        MPI_File_read_at_all(fh_in, read_offset, local_input.data(),
-            static_cast<int>(local_input_bytes), MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
-    }
-    MPI_File_close(&fh_in);
-
-    // Precompute horizontal bicubic weights
+    // Precompute horizontal bicubic LUT only once on rank 0
     std::vector<XWeights> x_lut(new_w);
-    for (int x = 0; x < new_w; ++x)
+
+    if (rank == 0)
     {
-        const float src_x = (static_cast<float>(x) + 0.5f) * x_ratio - 0.5f;
-        const int ix = static_cast<int>(std::floor(src_x));
-        const float u = src_x - static_cast<float>(ix);
-
-        float sum = 0.0f;
-        for (int n = -1; n <= 2; ++n)
+        for (int x = 0; x < new_w; ++x)
         {
-            const int index = n + 1;
-            const int px = clamp_int(ix + n, 0, old_w - 1);
-            const float w = cubic_weight_mpi(u - static_cast<float>(n));
+            const float src_x = (static_cast<float>(x) + 0.5f) * x_ratio - 0.5f;
+            const int ix = static_cast<int>(std::floor(src_x));
+            const float u = src_x - static_cast<float>(ix);
 
-            x_lut[x].offset[index] = px * 3;
-            x_lut[x].weight[index] = w;
-            sum += w;
-        }
+            float sum = 0.0f;
 
-        if (sum != 0.0f)
-        {
-            const float inv = 1.0f / sum;
-            x_lut[x].weight[0] *= inv;
-            x_lut[x].weight[1] *= inv;
-            x_lut[x].weight[2] *= inv;
-            x_lut[x].weight[3] *= inv;
+            for (int n = -1; n <= 2; ++n)
+            {
+                const int index = n + 1;
+                const int px = clamp_int(ix + n, 0, old_w - 1);
+                const float w = cubic_weight(u - static_cast<float>(n));
+
+                x_lut[x].offset[index] = px * 3;
+                x_lut[x].weight[index] = w;
+
+                sum += w;
+            }
+
+            if (sum != 0.0f)
+            {
+                const float inv = 1.0f / sum;
+                x_lut[x].weight[0] *= inv;
+                x_lut[x].weight[1] *= inv;
+                x_lut[x].weight[2] *= inv;
+                x_lut[x].weight[3] *= inv;
+            }
         }
     }
 
-    // Precompute vertical bicubic weights
+    // Broadcast horizontal LUT to all processes
+    MPI_Bcast(
+        x_lut.data(),
+        static_cast<int>(new_w * sizeof(XWeights)),
+        MPI_BYTE,
+        0,
+        MPI_COMM_WORLD);
+
+    // Precompute vertical bicubic LUT
     std::vector<YWeights> y_lut(output_rows);
+
     for (int local_y = 0; local_y < output_rows; ++local_y)
     {
         const int y = output_start + local_y;
@@ -152,14 +185,16 @@ void resize_image_mpi_io(
         const float v = src_y - static_cast<float>(iy);
 
         float sum = 0.0f;
+
         for (int m = -1; m <= 2; ++m)
         {
             const int index = m + 1;
             const int py = clamp_int(iy + m, 0, old_h - 1);
-            const float w = cubic_weight_mpi(v - static_cast<float>(m));
+            const float w = cubic_weight(v - static_cast<float>(m));
 
-            y_lut[local_y].row[index] = py - my_src_min; // Adjusted to my_src_min
+            y_lut[local_y].row[index] = py - my_src_start;
             y_lut[local_y].weight[index] = w;
+
             sum += w;
         }
 
@@ -173,7 +208,8 @@ void resize_image_mpi_io(
         }
     }
 
-    const size_t local_output_bytes = static_cast<size_t>(output_rows) * static_cast<size_t>(new_w) * 3;
+    const size_t local_output_bytes = static_cast<size_t>(output_rows) * output_row_bytes;
+
     std::vector<uint8_t> local_output(local_output_bytes);
 
     const uint8_t* RESTRICT src = local_input.empty() ? nullptr : local_input.data();
@@ -194,8 +230,11 @@ void resize_image_mpi_io(
         const float wy2 = yl.weight[2];
         const float wy3 = yl.weight[3];
 
-        uint8_t* RESTRICT out = dst + static_cast<size_t>(local_y) * new_w * 3;
+        uint8_t* RESTRICT out = dst + static_cast<size_t>(local_y) * output_row_bytes;
 
+#if defined(_MSC_VER)
+#pragma loop(ivdep)
+#endif
         for (int x = 0; x < new_w; ++x)
         {
             const XWeights& xl = x_lut[x];
@@ -232,22 +271,33 @@ void resize_image_mpi_io(
 
             const int out_idx = x * 3;
 
-            out[out_idx] = clamp_pixel_fast(b);
-            out[out_idx + 1] = clamp_pixel_fast(g);
-            out[out_idx + 2] = clamp_pixel_fast(r);
+            out[out_idx] = clamp_pixel(b);
+            out[out_idx + 1] = clamp_pixel(g);
+            out[out_idx + 2] = clamp_pixel(r);
         }
     }
 
-    // --- 2. MPI-IO WRITE ---
-    MPI_File fh_out;
-    MPI_File_open(MPI_COMM_WORLD, output_filename,
-        MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &fh_out);
+    // Gather output from all processes
+    std::vector<int> recv_counts(size);
+    std::vector<int> recv_displacements(size);
 
-    if (output_rows > 0)
+    for (int r = 0; r < size; ++r)
     {
-        MPI_Offset write_offset = static_cast<MPI_Offset>(output_start) * new_w * 3;
-        MPI_File_write_at_all(fh_out, write_offset, local_output.data(),
-            static_cast<int>(local_output_bytes), MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE);
+        const int r_rows = base_rows + (r < extra_rows ? 1 : 0);
+        const int r_start = r * base_rows + std::min(r, extra_rows);
+
+        recv_counts[r] = r_rows * output_row_bytes;
+        recv_displacements[r] = r_start * output_row_bytes;
     }
-    MPI_File_close(&fh_out);
+
+    MPI_Gatherv(
+        local_output.empty() ? nullptr : local_output.data(),
+        static_cast<int>(local_output_bytes),
+        MPI_UNSIGNED_CHAR,
+        cpu_out,
+        recv_counts.data(),
+        recv_displacements.data(),
+        MPI_UNSIGNED_CHAR,
+        0,
+        MPI_COMM_WORLD);
 }

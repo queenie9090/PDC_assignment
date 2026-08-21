@@ -17,6 +17,10 @@ SUPPORTED_FORMATS = ["jpg", "jpeg", "png"]
 MIN_DIMENSION = 32
 MAX_DIMENSION = 30000
 
+# SAFETY LIMITS TO PREVENT BROWSER / SYSTEM CRASHES
+MAX_DISPLAY_PIXELS = 50_000_000   # ~7000x7000 px limit for HTML/Base64 browser rendering
+MAX_TOTAL_PIXELS = 150_000_000     # ~12000x12000 px maximum computational limit
+
 st.set_page_config(
     page_title="Parallel Image Resizer",
     layout="wide"
@@ -135,6 +139,15 @@ if new_width > MAX_DIMENSION or new_height > MAX_DIMENSION:
     st.stop()
 
 output_pixels = new_width * new_height
+
+# COMPUTATIONAL SAFETY CHECK
+if output_pixels > MAX_TOTAL_PIXELS:
+    st.error(
+        f"Target resolution ({new_width} x {new_height} = {output_pixels:,} pixels) exceeds "
+        f"the maximum safety compute limit of {MAX_TOTAL_PIXELS:,} pixels to prevent memory crash."
+    )
+    st.stop()
+
 st.info(
     f"Output resolution: {new_width} x {new_height} pixels\n\n"
     f"Output pixels: {output_pixels:,}\n\n"
@@ -364,15 +377,22 @@ if st.session_state.get("has_run", False):
         result_image = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
         actual_height, actual_width = result_image.shape[:2]
 
-        img1_b64 = image_to_base64(image)
-        img2_b64 = image_to_base64(result_image)
+        # CONDITIONAL DISPLAY CHECK FOR SECTION 1
+        if actual_width * actual_height <= MAX_DISPLAY_PIXELS:
+            img1_b64 = image_to_base64(image)
+            img2_b64 = image_to_base64(result_image)
 
-        html_view1 = render_zoom_viewer(
-            img1_b64, img2_b64,
-            "Original", f"{run_mode.upper()} Bicubic",
-            original_width, original_height, actual_width, actual_height
-        )
-        components.html(html_view1, height=520)
+            html_view1 = render_zoom_viewer(
+                img1_b64, img2_b64,
+                "Original", f"{run_mode.upper()} Bicubic",
+                original_width, original_height, actual_width, actual_height
+            )
+            components.html(html_view1, height=520)
+        else:
+            st.warning(
+                f"Output image is too large ({actual_width} x {actual_height}) to load safely inside the browser viewer. "
+                "Interactive viewer disabled to prevent browser freeze. Use the download button below to inspect the full file."
+            )
 
         with open(output_path, "rb") as file:
             st.download_button(
@@ -402,15 +422,22 @@ if st.session_state.get("has_run", False):
         b_h, b_w = baseline_img_rgb.shape[:2]
         o_h, o_w = opencv_img_rgb.shape[:2]
 
-        cv_b64 = image_to_base64(opencv_img_rgb)
-        base_b64 = image_to_base64(baseline_img_rgb)
+        # CONDITIONAL DISPLAY CHECK FOR SECTION 2
+        if b_w * b_h <= MAX_DISPLAY_PIXELS:
+            cv_b64 = image_to_base64(opencv_img_rgb)
+            base_b64 = image_to_base64(baseline_img_rgb)
 
-        html_view2 = render_zoom_viewer(
-            cv_b64, base_b64,
-            "OpenCV (cv2.INTER_CUBIC)", "C++ Baseline Sequential",
-            o_w, o_h, b_w, b_h
-        )
-        components.html(html_view2, height=520)
+            html_view2 = render_zoom_viewer(
+                cv_b64, base_b64,
+                "OpenCV (cv2.INTER_CUBIC)", "C++ Baseline Sequential",
+                o_w, o_h, b_w, b_h
+            )
+            components.html(html_view2, height=520)
+        else:
+            st.warning(
+                f"Comparison image size ({b_w} x {b_h}) exceeds interactive rendering threshold. "
+                "Viewer disabled to avoid browser crash."
+            )
 
     except Exception as e:
         st.error(f"Failed to generate comparison with OpenCV: {e}")

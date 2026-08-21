@@ -2,44 +2,29 @@
 #include <iostream>
 #include <cmath>
 
-// OpenCV's cubic spline kernel uses a = -0.75f
+// Matching Baseline: Standard Bicubic Weight with a = -0.75f
 __device__ inline float cubic_weight(float x) {
     x = fabsf(x);
-    const float a = -0.75f;
+    float a = -0.75f; // Changed from -0.5f to match baseline
     if (x <= 1.0f) {
-        return (a + 2.0f) * x * x * x - (a + 3.0f) * x * x + 1.0f;
+        return (a + 2.0f) * (x * x * x) - (a + 3.0f) * (x * x) + 1.0f;
     }
     else if (x < 2.0f) {
-        return a * x * x * x - 5.0f * a * x * x + 8.0f * a * x - 4.0f * a;
+        return a * (x * x * x) - 5.0f * a * (x * x) + 8.0f * a * x - 4.0f * a;
     }
     return 0.0f;
 }
 
-// OpenCV border reflection mode: BORDER_REFLECT_101
-__device__ inline int reflect_101(int p, int len) {
-    if (len <= 1) return 0;
-    while (p < 0 || p >= len) {
-        if (p < 0) {
-            p = -p;
-        }
-        else if (p >= len) {
-            p = 2 * len - 2 - p;
-        }
-    }
-    return p;
-}
-
-// Fast CUDA Clamp & Rounding to uint8_t
+// Matching Baseline: Clamp and round to [0, 255]
 __device__ inline uint8_t clamp_pixel(float val) {
-    // Round to nearest integer and clamp directly to [0.0f, 255.0f]
-    float rounded = rintf(val);
-    float clamped = fminf(fmaxf(rounded, 0.0f), 255.0f);
-    return static_cast<uint8_t>(clamped);
+    if (val <= 0.0f) return 0;
+    if (val >= 255.0f) return 255;
+    return static_cast<uint8_t>(llroundf(val));
 }
 
-// BICUBIC CUDA KERNEL (3-Channel BGR format)
+// BICUBIC CUDA KERNEL
 __global__ void bicubic_resize_kernel(
-    uint8_t* out_img,
+    uint8_t* __restrict__ out_img,
     const uint8_t* __restrict__ in_img,
     int old_w, int old_h,
     int new_w, int new_h)
@@ -56,43 +41,43 @@ __global__ void bicubic_resize_kernel(
     int iy = (int)floorf(src_y);
     float v = src_y - iy;
 
-    // Precompute row weights (4 weights)
-    float wy[4];
-    wy[0] = cubic_weight(v + 1.0f);
-    wy[1] = cubic_weight(v);
-    wy[2] = cubic_weight(1.0f - v);
-    wy[3] = cubic_weight(2.0f - v);
-
     float src_x = ((float)x + 0.5f) * x_ratio - 0.5f;
     int ix = (int)floorf(src_x);
     float u = src_x - ix;
 
-    // Precompute col weights (4 weights)
-    float wx[4];
-    wx[0] = cubic_weight(u + 1.0f);
-    wx[1] = cubic_weight(u);
-    wx[2] = cubic_weight(1.0f - u);
-    wx[3] = cubic_weight(2.0f - u);
-
     float b_sum = 0.0f, g_sum = 0.0f, r_sum = 0.0f;
+    float total_weight = 0.0f;
 
     // 4x4 Grid sampling (16 pixels per thread)
 #pragma unroll
-    for (int m = 0; m < 4; ++m) {
-        int py = reflect_101(iy + m - 1, old_h);
-        float weight_y = wy[m];
+    for (int m = -1; m <= 2; ++m) {
+        float wy = cubic_weight(v - (float)m);
+        int py = iy + m;
+        if (py < 0) py = 0;
+        if (py >= old_h) py = old_h - 1;
 
 #pragma unroll
-        for (int n = 0; n < 4; ++n) {
-            int px = reflect_101(ix + n - 1, old_w);
-            float weight = weight_y * wx[n];
+        for (int n = -1; n <= 2; ++n) {
+            float wx = cubic_weight(u - (float)n);
+            int px = ix + n;
+            if (px < 0) px = 0;
+            if (px >= old_w) px = old_w - 1;
 
+            float weight = wx * wy;
             int old_offset = (py * old_w + px) * 3;
 
             b_sum += in_img[old_offset + 0] * weight;
             g_sum += in_img[old_offset + 1] * weight;
             r_sum += in_img[old_offset + 2] * weight;
+
+            total_weight += weight;
         }
+    }
+
+    if (total_weight > 0.0f) {
+        b_sum /= total_weight;
+        g_sum /= total_weight;
+        r_sum /= total_weight;
     }
 
     int new_offset = (y * new_w + x) * 3;
