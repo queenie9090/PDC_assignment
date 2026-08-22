@@ -61,5 +61,8 @@
     <None Include="run_test_baseline.py">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="result_averaging.py">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

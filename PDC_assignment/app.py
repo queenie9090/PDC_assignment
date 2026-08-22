@@ -3,7 +3,6 @@ import subprocess
 import os
 import re
 import base64
-import time
 import cv2
 import numpy as np
 import streamlit.components.v1 as components
@@ -161,7 +160,26 @@ def image_to_base64(img):
         raise ValueError("Unable to encode image as PNG.")
     return base64.b64encode(encoded_image.tobytes()).decode()
 
-def render_zoom_viewer(img1_b64, img2_b64, title1, title2, width1, height1, width2, height2):
+def render_multi_zoom_viewer(items):
+    """
+    Renders an HTML view containing multiple syncable/zoomable viewports.
+    items: list of tuples -> (b64_str, title, width, height)
+    """
+    cards_html = ""
+    setup_scripts = ""
+
+    for idx, (b64_str, title, w, h) in enumerate(items, 1):
+        vp_id = f"vp{idx}"
+        img_id = f"img{idx}"
+        cards_html += f"""
+        <div class="img-card">
+            <div class="img-title">{title} ({w} x {h})</div>
+            <div class="viewport" id="{vp_id}"><img class="zoom-img" id="{img_id}" src="data:image/png;base64,{b64_str}"></div>
+            <button class="reset-btn" onclick="resetView('{vp_id}', '{img_id}')">Reset View</button>
+        </div>
+        """
+        setup_scripts += f"setupViewer('{vp_id}', '{img_id}');\n"
+
     return f"""
     <!DOCTYPE html>
     <html>
@@ -170,8 +188,8 @@ def render_zoom_viewer(img1_b64, img2_b64, title1, title2, width1, height1, widt
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{ font-family: sans-serif; background: transparent; }}
         .container {{ display: flex; gap: 16px; width: 100%; }}
-        .img-card {{ flex: 1; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fafafa; }}
-        .img-title {{ text-align: center; font-weight: 600; font-size: 14px; margin-bottom: 8px; color: #333; }}
+        .img-card {{ flex: 1; min-width: 0; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fafafa; }}
+        .img-title {{ text-align: center; font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
         .viewport {{ width: 100%; height: 420px; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; position: relative; background: #1a1a1a; cursor: grab; }}
         .viewport.dragging {{ cursor: grabbing; }}
         .zoom-img {{ position: absolute; left: 0; top: 0; max-width: none; user-select: none; -webkit-user-drag: none; }}
@@ -181,16 +199,7 @@ def render_zoom_viewer(img1_b64, img2_b64, title1, title2, width1, height1, widt
     </head>
     <body>
     <div class="container">
-        <div class="img-card">
-            <div class="img-title">{title1} ({width1} x {height1})</div>
-            <div class="viewport" id="vp1"><img class="zoom-img" id="img1" src="data:image/png;base64,{img1_b64}"></div>
-            <button class="reset-btn" onclick="resetView('vp1', 'img1')">Reset View</button>
-        </div>
-        <div class="img-card">
-            <div class="img-title">{title2} ({width2} x {height2})</div>
-            <div class="viewport" id="vp2"><img class="zoom-img" id="img2" src="data:image/png;base64,{img2_b64}"></div>
-            <button class="reset-btn" onclick="resetView('vp2', 'img2')">Reset View</button>
-        </div>
+        {cards_html}
     </div>
     <script>
     const viewers = {{}};
@@ -278,8 +287,7 @@ def render_zoom_viewer(img1_b64, img2_b64, title1, title2, width1, height1, widt
         fitImage(viewportId, imageId);
     }}
 
-    setupViewer("vp1", "img1");
-    setupViewer("vp2", "img2");
+    {setup_scripts}
     </script>
     </body>
     </html>
@@ -288,14 +296,13 @@ def render_zoom_viewer(img1_b64, img2_b64, title1, title2, width1, height1, widt
 if st.button("Resize Image", type="primary", use_container_width=True):
     input_path = os.path.join(TEMP_DIR, "input_image.png")
     output_path = os.path.join(TEMP_DIR, "resized_image.png")
-    baseline_path = os.path.join(TEMP_DIR, "baseline_image.png")
 
     try:
         image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         if not cv2.imwrite(input_path, image_bgr):
             raise ValueError("Unable to save input image.")
 
-        # 1. Run Selected Implementation
+        # 1. Run Selected C++ Implementation
         command = [EXE_PATH, input_path, output_path, str(new_width), str(new_height), mode]
         if mode == "mpi":
             command = ["mpiexec", "-n", "4"] + command
@@ -324,21 +331,17 @@ if st.button("Resize Image", type="primary", use_container_width=True):
             if process.stdout: st.code(process.stdout)
             st.stop()
 
-        # 2. Run OpenCV Bicubic Benchmark
-        opencv_resized_bgr = cv2.resize(image_bgr, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-
-        # 3. Fetch Baseline Image (Run Baseline if chosen mode wasn't baseline)
-        if mode != "baseline":
-            base_cmd = [EXE_PATH, input_path, baseline_path, str(new_width), str(new_height), "baseline"]
-            subprocess.run(base_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
-        else:
-            cv2.imwrite(baseline_path, cv2.imread(output_path))
+        # 2. Benchmark Algorithms with OpenCV
+        opencv_bicubic_bgr = cv2.resize(image_bgr, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+        opencv_knn_bgr = cv2.resize(image_bgr, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        opencv_bilinear_bgr = cv2.resize(image_bgr, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
 
         st.session_state["has_run"] = True
         st.session_state["output_path"] = output_path
-        st.session_state["baseline_path"] = baseline_path
         st.session_state["execution_time"] = execution_time
-        st.session_state["opencv_img_rgb"] = cv2.cvtColor(opencv_resized_bgr, cv2.COLOR_BGR2RGB)
+        st.session_state["opencv_bicubic_rgb"] = cv2.cvtColor(opencv_bicubic_bgr, cv2.COLOR_BGR2RGB)
+        st.session_state["opencv_knn_rgb"] = cv2.cvtColor(opencv_knn_bgr, cv2.COLOR_BGR2RGB)
+        st.session_state["opencv_bilinear_rgb"] = cv2.cvtColor(opencv_bilinear_bgr, cv2.COLOR_BGR2RGB)
         st.session_state["mode"] = mode
         st.session_state["stdout"] = process.stdout
         st.session_state["stderr"] = process.stderr
@@ -377,16 +380,14 @@ if st.session_state.get("has_run", False):
         result_image = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
         actual_height, actual_width = result_image.shape[:2]
 
-        # CONDITIONAL DISPLAY CHECK FOR SECTION 1
         if actual_width * actual_height <= MAX_DISPLAY_PIXELS:
             img1_b64 = image_to_base64(image)
             img2_b64 = image_to_base64(result_image)
 
-            html_view1 = render_zoom_viewer(
-                img1_b64, img2_b64,
-                "Original", f"{run_mode.upper()} Bicubic",
-                original_width, original_height, actual_width, actual_height
-            )
+            html_view1 = render_multi_zoom_viewer([
+                (img1_b64, "Original", original_width, original_height),
+                (img2_b64, f"{run_mode.upper()} Bicubic", actual_width, actual_height)
+            ])
             components.html(html_view1, height=520)
         else:
             st.warning(
@@ -407,40 +408,56 @@ if st.session_state.get("has_run", False):
         st.error(f"Unable to display output image: {e}")
 
     # -------------------------------------------------------------
-    # SECTION 2: OPENCV VS C++ BASELINE IMAGE COMPARISON
+    # SECTION 2: Dynamic Comparison (OpenCV vs Selected Mode)
     # -------------------------------------------------------------
     st.divider()
-    st.header("OpenCV vs C++ Baseline Image Comparison")
+    st.header(f"OpenCV vs C++ {run_mode.upper()} Image Comparison")
 
-    baseline_path = st.session_state.get("baseline_path")
-    opencv_img_rgb = st.session_state.get("opencv_img_rgb")
+    opencv_bicubic_rgb = st.session_state.get("opencv_bicubic_rgb")
 
     try:
-        baseline_img_bgr = cv2.imread(baseline_path, cv2.IMREAD_COLOR)
-        baseline_img_rgb = cv2.cvtColor(baseline_img_bgr, cv2.COLOR_BGR2RGB)
+        if actual_width * actual_height <= MAX_DISPLAY_PIXELS:
+            cv_b64 = image_to_base64(opencv_bicubic_rgb)
+            mode_b64 = image_to_base64(result_image)
 
-        b_h, b_w = baseline_img_rgb.shape[:2]
-        o_h, o_w = opencv_img_rgb.shape[:2]
-
-        # CONDITIONAL DISPLAY CHECK FOR SECTION 2
-        if b_w * b_h <= MAX_DISPLAY_PIXELS:
-            cv_b64 = image_to_base64(opencv_img_rgb)
-            base_b64 = image_to_base64(baseline_img_rgb)
-
-            html_view2 = render_zoom_viewer(
-                cv_b64, base_b64,
-                "OpenCV (cv2.INTER_CUBIC)", "C++ Baseline Sequential",
-                o_w, o_h, b_w, b_h
-            )
+            html_view2 = render_multi_zoom_viewer([
+                (cv_b64, "OpenCV (cv2.INTER_CUBIC)", actual_width, actual_height),
+                (mode_b64, f"C++ {run_mode.upper()} Implementation", actual_width, actual_height)
+            ])
             components.html(html_view2, height=520)
         else:
-            st.warning(
-                f"Comparison image size ({b_w} x {b_h}) exceeds interactive rendering threshold. "
-                "Viewer disabled to avoid browser crash."
-            )
+            st.warning("Comparison image size exceeds interactive rendering threshold.")
 
     except Exception as e:
         st.error(f"Failed to generate comparison with OpenCV: {e}")
+
+    # -------------------------------------------------------------
+    # SECTION 3: Interpolation Method Comparison (KNN vs Bilinear vs Selected C++)
+    # -------------------------------------------------------------
+    st.divider()
+    st.header("Interpolation Method Comparison (KNN vs Bilinear vs Our Bicubic)")
+    st.write("Compare visual clarity and artifacting across three interpolation techniques at target resolution:")
+
+    opencv_knn_rgb = st.session_state.get("opencv_knn_rgb")
+    opencv_bilinear_rgb = st.session_state.get("opencv_bilinear_rgb")
+
+    try:
+        if actual_width * actual_height <= MAX_DISPLAY_PIXELS:
+            knn_b64 = image_to_base64(opencv_knn_rgb)
+            bilinear_b64 = image_to_base64(opencv_bilinear_rgb)
+            our_bicubic_b64 = image_to_base64(result_image)
+
+            html_view3 = render_multi_zoom_viewer([
+                (knn_b64, "Nearest Neighbor (KNN)", actual_width, actual_height),
+                (bilinear_b64, "Bilinear (OpenCV)", actual_width, actual_height),
+                (our_bicubic_b64, f"Our Bicubic ({run_mode.upper()})", actual_width, actual_height)
+            ])
+            components.html(html_view3, height=520)
+        else:
+            st.warning("Quality comparison image size exceeds interactive rendering threshold.")
+
+    except Exception as e:
+        st.error(f"Failed to render algorithm comparison: {e}")
 
     # Output Logs
     with st.expander("Program Output"):
