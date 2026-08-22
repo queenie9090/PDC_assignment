@@ -35,7 +35,8 @@ meta_cols = [
     'Image',
     'Input_Image_Size_MB',
     'Original_Resolution',
-    'Output_Resolution'
+    'Output_Resolution',
+    'Megapixels'
 ]
 
 # AVERAGE RESULTS FROM 3 MEMBERS
@@ -52,6 +53,27 @@ def process_averages(file_list):
         meta_cols,
         as_index=False
     )[metric_cols].mean()
+
+    # Calculate Throughput (MP/s) = Megapixels / (Execution Time (ms) / 1000)
+    throughput_mapping = {
+        'baseline_ms': 'baseline_throughput_MPps',
+        'openmp_ms': 'openmp_throughput_MPps',
+        'cuda_ms': 'cuda_throughput_MPps',
+        'mpi_ms': 'mpi_throughput_MPps'
+    }
+
+    for time_col, tp_col in throughput_mapping.items():
+        if time_col in averaged_df.columns:
+            averaged_df[tp_col] = np.where(
+                (
+                    averaged_df[time_col].notna()
+                    & (averaged_df[time_col] > 0)
+                    & averaged_df['Megapixels'].notna()
+                ),
+                averaged_df['Megapixels'] / (averaged_df[time_col] / 1000.0),
+                np.nan
+            )
+            averaged_df[tp_col] = averaged_df[tp_col].round(3)
 
     return averaged_df
 
@@ -98,6 +120,7 @@ def generate_graph(
         y=1,
         linestyle='--',
         linewidth=1.5,
+        color='black',
         label='Sequential Baseline (1×)'
     )
 
@@ -106,6 +129,9 @@ def generate_graph(
     # --------------------------------------------------------
 
     for name, column in implementations.items():
+
+        if column not in df.columns:
+            continue
 
         y = df[column]
 
