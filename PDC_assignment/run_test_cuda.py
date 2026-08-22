@@ -4,7 +4,7 @@ import re
 import pandas as pd
 from PIL import Image
 
-DATASET_DIR = "./dataset_ordered(100)"
+DATASET_DIR = "./dataset_ordered"
 OUTPUT_DIR = "./output_images"
 EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
 
