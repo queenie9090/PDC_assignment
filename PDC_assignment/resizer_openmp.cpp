@@ -5,6 +5,12 @@
 #include <vector>
 #include <cstdint>
 
+#if defined(_MSC_VER)
+#define RESTRICT __restrict
+#else
+#define RESTRICT __restrict__
+#endif
+
 static inline float cubic_weight_openmp(float x)
 {
     x = std::fabs(x);
@@ -51,8 +57,8 @@ struct YInfo
 
 
 void resize_image_openmp(
-    uint8_t* cpu_out,
-    uint8_t* cpu_in,
+    uint8_t* RESTRICT cpu_out,   //
+    uint8_t* RESTRICT cpu_in,    //
     int old_w, int old_h,
     int new_w, int new_h)
 {
@@ -76,6 +82,7 @@ void resize_image_openmp(
         float u =
             src_x - static_cast<float>(ix);
 
+        float sum = 0.0f; 
 
         for (int n = -1; n <= 2; ++n)
         {
@@ -97,6 +104,18 @@ void resize_image_openmp(
                 cubic_weight_openmp(
                     u - static_cast<float>(n)
                 );
+
+            sum += x_info[x].wx[index]; 
+        }
+
+        // [2] Normalize once here only
+        if (sum != 0.0f)
+        {
+            const float inv = 1.0f / sum;
+            x_info[x].wx[0] *= inv;
+            x_info[x].wx[1] *= inv;
+            x_info[x].wx[2] *= inv;
+            x_info[x].wx[3] *= inv;
         }
     }
 
@@ -116,6 +135,7 @@ void resize_image_openmp(
         float v =
             src_y - static_cast<float>(iy);
 
+        float sum = 0.0f; 
 
         for (int m = -1; m <= 2; ++m)
         {
@@ -137,6 +157,18 @@ void resize_image_openmp(
                 cubic_weight_openmp(
                     v - static_cast<float>(m)
                 );
+
+            sum += y_info[y].wy[index]; 
+        }
+
+        // [2] Normalize once here only too
+        if (sum != 0.0f)
+        {
+            const float inv = 1.0f / sum;
+            y_info[y].wy[0] *= inv;
+            y_info[y].wy[1] *= inv;
+            y_info[y].wy[2] *= inv;
+            y_info[y].wy[3] *= inv;
         }
     }
 
