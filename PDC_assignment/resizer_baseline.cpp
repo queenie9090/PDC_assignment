@@ -15,14 +15,6 @@ static float cubic_weight(float x) {
     return 0.0f;
 }
 
-/*
-static uint8_t clamp_pixel(float val) {
-    if (val < 0.0f) return 0;
-    if (val > 255.0f) return 255;
-    return static_cast<uint8_t>(val);
-}
-*/
-
 static uint8_t clamp_pixel(float val)
 {
     if (val <= 0.0f)
@@ -53,31 +45,61 @@ void resize_image_sequential(
             int ix = (int)std::floor(src_x);
             float u = src_x - ix;
 
-            float b_sum = 0.0f, g_sum = 0.0f, r_sum = 0.0f;
+            float b_sum = 0.0f;
+            float g_sum = 0.0f;
+            float r_sum = 0.0f;
             float total_weight = 0.0f;
+
+            // Precalculate the 4 horizontal weights
+            float wx[4];
+
+            for (int n = -1; n <= 2; ++n) {
+                wx[n + 1] = cubic_weight(u - (float)n);
+            }
 
             // 4x4 Grid sampling (16 pixels)
             for (int m = -1; m <= 2; ++m) {
+
+                // Calculate vertical weight once for this row
                 float wy = cubic_weight(v - (float)m);
+
                 int py = iy + m;
+
                 if (py < 0) py = 0;
                 if (py >= old_h) py = old_h - 1;
 
+                // Accumulate horizontal weighted values first
+                float b_row = 0.0f;
+                float g_row = 0.0f;
+                float r_row = 0.0f;
+
+                float row_weight = 0.0f;
+
                 for (int n = -1; n <= 2; ++n) {
-                    float wx = cubic_weight(u - (float)n);
+
                     int px = ix + n;
+
                     if (px < 0) px = 0;
                     if (px >= old_w) px = old_w - 1;
 
-                    float weight = wx * wy;
                     int old_offset = (py * old_w + px) * 3;
 
-                    b_sum += cpu_in[old_offset + 0] * weight;
-                    g_sum += cpu_in[old_offset + 1] * weight;
-                    r_sum += cpu_in[old_offset + 2] * weight;
+                    float horizontal_weight = wx[n + 1];
 
-                    total_weight += weight;
+                    // Apply horizontal weight first
+                    b_row += cpu_in[old_offset + 0] * horizontal_weight;
+                    g_row += cpu_in[old_offset + 1] * horizontal_weight;
+                    r_row += cpu_in[old_offset + 2] * horizontal_weight;
+
+                    row_weight += horizontal_weight;
                 }
+
+                // Apply vertical weight once to the accumulated row
+                b_sum += b_row * wy;
+                g_sum += g_row * wy;
+                r_sum += r_row * wy;
+
+                total_weight += row_weight * wy;
             }
 
             if (total_weight > 0.0f) {
@@ -87,6 +109,7 @@ void resize_image_sequential(
             }
 
             int new_offset = (y * new_w + x) * 3;
+
             cpu_out[new_offset + 0] = clamp_pixel(b_sum);
             cpu_out[new_offset + 1] = clamp_pixel(g_sum);
             cpu_out[new_offset + 2] = clamp_pixel(r_sum);

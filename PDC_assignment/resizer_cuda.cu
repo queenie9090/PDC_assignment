@@ -37,6 +37,7 @@ __global__ void bicubic_resize_kernel(
     float x_ratio = (float)old_w / new_w;
     float y_ratio = (float)old_h / new_h;
 
+    // Center-aligned inverse mapping
     float src_y = ((float)y + 0.5f) * y_ratio - 0.5f;
     int iy = (int)floorf(src_y);
     float v = src_y - iy;
@@ -45,42 +46,80 @@ __global__ void bicubic_resize_kernel(
     int ix = (int)floorf(src_x);
     float u = src_x - ix;
 
-    float b_sum = 0.0f, g_sum = 0.0f, r_sum = 0.0f;
+    float b_sum = 0.0f;
+    float g_sum = 0.0f;
+    float r_sum = 0.0f;
     float total_weight = 0.0f;
 
-    // 4x4 Grid sampling (16 pixels per thread)
-#pragma unroll
-    for (int m = -1; m <= 2; ++m) {
-        float wy = cubic_weight(v - (float)m);
-        int py = iy + m;
-        if (py < 0) py = 0;
-        if (py >= old_h) py = old_h - 1;
+    // Precalculate the 4 horizontal weights
+    float wx[4];
 
 #pragma unroll
-        for (int n = -1; n <= 2; ++n) {
-            float wx = cubic_weight(u - (float)n);
-            int px = ix + n;
-            if (px < 0) px = 0;
-            if (px >= old_w) px = old_w - 1;
-
-            float weight = wx * wy;
-            int old_offset = (py * old_w + px) * 3;
-
-            b_sum += in_img[old_offset + 0] * weight;
-            g_sum += in_img[old_offset + 1] * weight;
-            r_sum += in_img[old_offset + 2] * weight;
-
-            total_weight += weight;
-        }
+    for (int n = -1; n <= 2; ++n) {
+        wx[n + 1] = cubic_weight(u - (float)n);
     }
 
+    // Process the 4 rows
+#pragma unroll
+    for (int m = -1; m <= 2; ++m) {
+
+        // Calculate vertical weight once for this row
+        float wy = cubic_weight(v - (float)m);
+
+        int py = iy + m;
+
+        // Boundary clamping
+        if (py < 0) py = 0;
+
+        if (py >= old_h) py = old_h - 1;
+
+        // Accumulate horizontal weighted values first
+        float b_row = 0.0f;
+        float g_row = 0.0f;
+        float r_row = 0.0f;
+        float row_weight = 0.0f;
+
+        // Process the 4 pixels in this row
+#pragma unroll
+        for (int n = -1; n <= 2; ++n) {
+
+            int px = ix + n;
+
+            // Boundary clamping
+            if (px < 0) px = 0;
+
+            if (px >= old_w) px = old_w - 1;
+
+            int old_offset = (py * old_w + px) * 3;
+
+            float horizontal_weight = wx[n + 1];
+
+            // Apply horizontal weight first
+            b_row += in_img[old_offset + 0] * horizontal_weight;
+            g_row += in_img[old_offset + 1] * horizontal_weight;
+            r_row += in_img[old_offset + 2] * horizontal_weight;
+
+            row_weight += horizontal_weight;
+        }
+
+        // Apply vertical weight once to the accumulated row
+        b_sum += b_row * wy;
+        g_sum += g_row * wy;
+        r_sum += r_row * wy;
+
+        total_weight += row_weight * wy;
+    }
+
+    // Normalize
     if (total_weight > 0.0f) {
         b_sum /= total_weight;
         g_sum /= total_weight;
         r_sum /= total_weight;
     }
 
+    // Store output pixel
     int new_offset = (y * new_w + x) * 3;
+
     out_img[new_offset + 0] = clamp_pixel(b_sum);
     out_img[new_offset + 1] = clamp_pixel(g_sum);
     out_img[new_offset + 2] = clamp_pixel(r_sum);
