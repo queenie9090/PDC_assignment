@@ -11,16 +11,22 @@
 #define RESTRICT __restrict__
 #endif
 
+
 static inline float cubic_weight_openmp(float x)
 {
     x = std::fabs(x);
     const float a = -0.75f;
 
     if (x <= 1.0f) {
-        return (a + 2.0f) * (x * x * x) - (a + 3.0f) * (x * x) + 1.0f;
+        return (a + 2.0f) * (x * x * x)
+            - (a + 3.0f) * (x * x)
+            + 1.0f;
     }
     else if (x < 2.0f) {
-        return a * (x * x * x) - 5.0f * a * (x * x) + 8.0f * a * x - 4.0f * a;
+        return a * (x * x * x)
+            - 5.0f * a * (x * x)
+            + 8.0f * a * x
+            - 4.0f * a;
     }
 
     return 0.0f;
@@ -57,15 +63,18 @@ struct YInfo
 
 
 void resize_image_openmp(
-    uint8_t* RESTRICT cpu_out,   //
-    uint8_t* RESTRICT cpu_in,    //
+    uint8_t* RESTRICT cpu_out, //
+    uint8_t* RESTRICT cpu_in, //
     int old_w, int old_h,
     int new_w, int new_h)
 {
-    const float x_ratio = static_cast<float>(old_w) / static_cast<float>(new_w);
+    const float x_ratio =
+        static_cast<float>(old_w) /
+        static_cast<float>(new_w);
 
-    const float y_ratio = static_cast<float>(old_h) / static_cast<float>(new_h);
-
+    const float y_ratio =
+        static_cast<float>(old_h) /
+        static_cast<float>(new_h);
 
     std::vector<XInfo> x_info(new_w);
 
@@ -82,7 +91,7 @@ void resize_image_openmp(
         float u =
             src_x - static_cast<float>(ix);
 
-        float sum = 0.0f; 
+        float sum = 0.0f;
 
         for (int n = -1; n <= 2; ++n)
         {
@@ -105,20 +114,21 @@ void resize_image_openmp(
                     u - static_cast<float>(n)
                 );
 
-            sum += x_info[x].wx[index]; 
+            sum += x_info[x].wx[index];
         }
+
 
         // [2] Normalize once here only
         if (sum != 0.0f)
         {
             const float inv = 1.0f / sum;
+
             x_info[x].wx[0] *= inv;
             x_info[x].wx[1] *= inv;
             x_info[x].wx[2] *= inv;
             x_info[x].wx[3] *= inv;
         }
     }
-
 
     std::vector<YInfo> y_info(new_h);
 
@@ -135,7 +145,7 @@ void resize_image_openmp(
         float v =
             src_y - static_cast<float>(iy);
 
-        float sum = 0.0f; 
+        float sum = 0.0f;
 
         for (int m = -1; m <= 2; ++m)
         {
@@ -158,20 +168,21 @@ void resize_image_openmp(
                     v - static_cast<float>(m)
                 );
 
-            sum += y_info[y].wy[index]; 
+            sum += y_info[y].wy[index];
         }
+
 
         // [2] Normalize once here only too
         if (sum != 0.0f)
         {
             const float inv = 1.0f / sum;
+
             y_info[y].wy[0] *= inv;
             y_info[y].wy[1] *= inv;
             y_info[y].wy[2] *= inv;
             y_info[y].wy[3] *= inv;
         }
     }
-
 
 #pragma omp parallel for schedule(static)
     for (int y = 0; y < new_h; ++y)
@@ -186,56 +197,50 @@ void resize_image_openmp(
             float g_sum = 0.0f;
             float r_sum = 0.0f;
 
-            float total_weight = 0.0f;
-
 
             for (int m = 0; m < 4; ++m)
             {
                 const float wy = yi.wy[m];
 
-                const int row_offset = yi.py[m] * old_w * 3;
+                const int row_offset =
+                    yi.py[m] * old_w * 3;
+
+
+                float b_row = 0.0f;
+                float g_row = 0.0f;
+                float r_row = 0.0f;
+
 
                 for (int n = 0; n < 4; ++n)
                 {
-                    const float weight =
-                        xi.wx[n] * wy;
-
                     const int old_offset =
                         row_offset
                         + xi.px[n] * 3;
 
+                    const float wx =
+                        xi.wx[n];
 
-                    b_sum +=
+
+                    b_row +=
                         static_cast<float>(
                             cpu_in[old_offset]
-                            ) * weight;
+                            ) * wx;
 
-                    g_sum +=
+                    g_row +=
                         static_cast<float>(
                             cpu_in[old_offset + 1]
-                            ) * weight;
+                            ) * wx;
 
-                    r_sum +=
+                    r_row +=
                         static_cast<float>(
                             cpu_in[old_offset + 2]
-                            ) * weight;
-
-
-                    total_weight += weight;
+                            ) * wx;
                 }
+
+                b_sum += b_row * wy;
+                g_sum += g_row * wy;
+                r_sum += r_row * wy;
             }
-
-
-            if (total_weight > 0.0f)
-            {
-                const float inverse_weight =
-                    1.0f / total_weight;
-
-                b_sum *= inverse_weight;
-                g_sum *= inverse_weight;
-                r_sum *= inverse_weight;
-            }
-
 
             const int new_offset =
                 (y * new_w + x) * 3;
