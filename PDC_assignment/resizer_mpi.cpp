@@ -219,25 +219,32 @@ void resize_image_mpi(
     // Bicubic interpolation
     for (int local_y = 0; local_y < output_rows; ++local_y)
     {
+        // Get the 4 precomputed source rows
+        // and their vertical weights
         const YWeights& yl = y_lut[local_y];
 
-        const uint8_t* RESTRICT r0 = src + static_cast<size_t>(yl.row[0]) * input_row_bytes;
-        const uint8_t* RESTRICT r1 = src + static_cast<size_t>(yl.row[1]) * input_row_bytes;
-        const uint8_t* RESTRICT r2 = src + static_cast<size_t>(yl.row[2]) * input_row_bytes;
-        const uint8_t* RESTRICT r3 = src + static_cast<size_t>(yl.row[3]) * input_row_bytes;
+        const uint8_t* RESTRICT row0 =
+            src + static_cast<size_t>(yl.row[0]) * input_row_bytes;
 
+        const uint8_t* RESTRICT row1 =
+            src + static_cast<size_t>(yl.row[1]) * input_row_bytes;
+
+        const uint8_t* RESTRICT row2 =
+            src + static_cast<size_t>(yl.row[2]) * input_row_bytes;
+
+        const uint8_t* RESTRICT row3 =
+            src + static_cast<size_t>(yl.row[3]) * input_row_bytes;
+
+        // Precomputed vertical weights
         const float wy0 = yl.weight[0];
         const float wy1 = yl.weight[1];
         const float wy2 = yl.weight[2];
         const float wy3 = yl.weight[3];
 
-        uint8_t* RESTRICT out = dst + static_cast<size_t>(local_y) * output_row_bytes;
-
-#if defined(_MSC_VER)
-#pragma loop(ivdep)
-#endif
         for (int x = 0; x < new_w; ++x)
         {
+            // Get precomputed horizontal pixel offsets
+            // and horizontal weights
             const XWeights& xl = x_lut[x];
 
             const int o0 = xl.offset[0];
@@ -250,31 +257,128 @@ void resize_image_mpi(
             const float wx2 = xl.weight[2];
             const float wx3 = xl.weight[3];
 
-            const float h0_b = r0[o0] * wx0 + r0[o1] * wx1 + r0[o2] * wx2 + r0[o3] * wx3;
-            const float h0_g = r0[o0 + 1] * wx0 + r0[o1 + 1] * wx1 + r0[o2 + 1] * wx2 + r0[o3 + 1] * wx3;
-            const float h0_r = r0[o0 + 2] * wx0 + r0[o1 + 2] * wx1 + r0[o2 + 2] * wx2 + r0[o3 + 2] * wx3;
 
-            const float h1_b = r1[o0] * wx0 + r1[o1] * wx1 + r1[o2] * wx2 + r1[o3] * wx3;
-            const float h1_g = r1[o0 + 1] * wx0 + r1[o1 + 1] * wx1 + r1[o2 + 1] * wx2 + r1[o3 + 1] * wx3;
-            const float h1_r = r1[o0 + 2] * wx0 + r1[o1 + 2] * wx1 + r1[o2 + 2] * wx2 + r1[o3 + 2] * wx3;
+            // =================================================
+            // STEP 1:
+            // Horizontal weighted sum first
+            // =================================================
 
-            const float h2_b = r2[o0] * wx0 + r2[o1] * wx1 + r2[o2] * wx2 + r2[o3] * wx3;
-            const float h2_g = r2[o0 + 1] * wx0 + r2[o1 + 1] * wx1 + r2[o2 + 1] * wx2 + r2[o3 + 1] * wx3;
-            const float h2_r = r2[o0 + 2] * wx0 + r2[o1 + 2] * wx1 + r2[o2 + 2] * wx2 + r2[o3 + 2] * wx3;
+            // Row 0
+            const float h0_b =
+                row0[o0 + 0] * wx0 +
+                row0[o1 + 0] * wx1 +
+                row0[o2 + 0] * wx2 +
+                row0[o3 + 0] * wx3;
 
-            const float h3_b = r3[o0] * wx0 + r3[o1] * wx1 + r3[o2] * wx2 + r3[o3] * wx3;
-            const float h3_g = r3[o0 + 1] * wx0 + r3[o1 + 1] * wx1 + r3[o2 + 1] * wx2 + r3[o3 + 1] * wx3;
-            const float h3_r = r3[o0 + 2] * wx0 + r3[o1 + 2] * wx1 + r3[o2 + 2] * wx2 + r3[o3 + 2] * wx3;
+            const float h0_g =
+                row0[o0 + 1] * wx0 +
+                row0[o1 + 1] * wx1 +
+                row0[o2 + 1] * wx2 +
+                row0[o3 + 1] * wx3;
 
-            const float b = h0_b * wy0 + h1_b * wy1 + h2_b * wy2 + h3_b * wy3;
-            const float g = h0_g * wy0 + h1_g * wy1 + h2_g * wy2 + h3_g * wy3;
-            const float r = h0_r * wy0 + h1_r * wy1 + h2_r * wy2 + h3_r * wy3;
+            const float h0_r =
+                row0[o0 + 2] * wx0 +
+                row0[o1 + 2] * wx1 +
+                row0[o2 + 2] * wx2 +
+                row0[o3 + 2] * wx3;
 
-            const int out_idx = x * 3;
 
-            out[out_idx] = clamp_pixel(b);
-            out[out_idx + 1] = clamp_pixel(g);
-            out[out_idx + 2] = clamp_pixel(r);
+            // Row 1
+            const float h1_b =
+                row1[o0 + 0] * wx0 +
+                row1[o1 + 0] * wx1 +
+                row1[o2 + 0] * wx2 +
+                row1[o3 + 0] * wx3;
+
+            const float h1_g =
+                row1[o0 + 1] * wx0 +
+                row1[o1 + 1] * wx1 +
+                row1[o2 + 1] * wx2 +
+                row1[o3 + 1] * wx3;
+
+            const float h1_r =
+                row1[o0 + 2] * wx0 +
+                row1[o1 + 2] * wx1 +
+                row1[o2 + 2] * wx2 +
+                row1[o3 + 2] * wx3;
+
+
+            // Row 2
+            const float h2_b =
+                row2[o0 + 0] * wx0 +
+                row2[o1 + 0] * wx1 +
+                row2[o2 + 0] * wx2 +
+                row2[o3 + 0] * wx3;
+
+            const float h2_g =
+                row2[o0 + 1] * wx0 +
+                row2[o1 + 1] * wx1 +
+                row2[o2 + 1] * wx2 +
+                row2[o3 + 1] * wx3;
+
+            const float h2_r =
+                row2[o0 + 2] * wx0 +
+                row2[o1 + 2] * wx1 +
+                row2[o2 + 2] * wx2 +
+                row2[o3 + 2] * wx3;
+
+
+            // Row 3
+            const float h3_b =
+                row3[o0 + 0] * wx0 +
+                row3[o1 + 0] * wx1 +
+                row3[o2 + 0] * wx2 +
+                row3[o3 + 0] * wx3;
+
+            const float h3_g =
+                row3[o0 + 1] * wx0 +
+                row3[o1 + 1] * wx1 +
+                row3[o2 + 1] * wx2 +
+                row3[o3 + 1] * wx3;
+
+            const float h3_r =
+                row3[o0 + 2] * wx0 +
+                row3[o1 + 2] * wx1 +
+                row3[o2 + 2] * wx2 +
+                row3[o3 + 2] * wx3;
+
+
+            // =================================================
+            // STEP 2:
+            // After horizontal PLUS,
+            // directly multiply by vertical weight
+            // =================================================
+
+            const float b =
+                h0_b * wy0 +
+                h1_b * wy1 +
+                h2_b * wy2 +
+                h3_b * wy3;
+
+            const float g =
+                h0_g * wy0 +
+                h1_g * wy1 +
+                h2_g * wy2 +
+                h3_g * wy3;
+
+            const float r =
+                h0_r * wy0 +
+                h1_r * wy1 +
+                h2_r * wy2 +
+                h3_r * wy3;
+
+
+            // =================================================
+            // STEP 3:
+            // Store output pixel
+            // =================================================
+
+            const int new_offset =
+                (local_y * new_w + x) * 3;
+
+            dst[new_offset + 0] = clamp_pixel(b);
+            dst[new_offset + 1] = clamp_pixel(g);
+            dst[new_offset + 2] = clamp_pixel(r);
         }
     }
 
