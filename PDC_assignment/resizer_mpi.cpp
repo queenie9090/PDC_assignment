@@ -24,7 +24,6 @@ static inline uint8_t clamp_pixel(float val)
     return static_cast<uint8_t>(val + 0.5f);
 }
 
-// Catmull-Rom style bicubic spline kernel
 static inline float cubic_weight(float x)
 {
     x = std::fabs(x);
@@ -257,11 +256,7 @@ void resize_image_mpi(
             const float wx2 = xl.weight[2];
             const float wx3 = xl.weight[3];
 
-
-            // =================================================
-            // STEP 1:
             // Horizontal weighted sum first
-            // =================================================
 
             // Row 0
             const float h0_b =
@@ -343,12 +338,8 @@ void resize_image_mpi(
                 row3[o3 + 2] * wx3;
 
 
-            // =================================================
-            // STEP 2:
             // After horizontal PLUS,
             // directly multiply by vertical weight
-            // =================================================
-
             const float b =
                 h0_b * wy0 +
                 h1_b * wy1 +
@@ -367,12 +358,7 @@ void resize_image_mpi(
                 h2_r * wy2 +
                 h3_r * wy3;
 
-
-            // =================================================
-            // STEP 3:
             // Store output pixel
-            // =================================================
-
             const int new_offset =
                 (local_y * new_w + x) * 3;
 
