@@ -72,12 +72,14 @@ OpenCV: https://sourceforge.net/projects/opencvlibrary/files/4.11.0/opencv-4.11.
 Before run the program, click Build -> Build Solution or Rebuild Solution
 To run the program, Open Terminal using CTRL + ` or View -> Terminal
 Command To run:
-1. cd PDC_Assignment
-2. python run_test_all.py       (Run all implementations)
-3. python run_test_baseline.py  (Run Sequential Baseline only)
-4. python run_test_omp.py       (Run OpenMP only)
-5. python run_test_mpi.py       (Run MPI only)
-6. python run_test_cuda.py      (Run CUDA only)
+1. cd PDC_Assignment  
+2. Option to run:  
+3. python run_test_all.py       (Run all implementations)
+4. python run_test_baseline.py  (Run Sequential Baseline only)
+5. python run_test_omp.py       (Run OpenMP only)
+6. python run_test_mpi.py       (Run MPI only)
+7. python run_test_cuda.py      (Run CUDA only)
+8. python result_averaging.py   (Averages 3 result csv files)
 
 **Remark: If you plan to run only one parallel implementation (OpenMP, MPI, or CUDA), please run the baseline benchmark first. The baseline results are required to calculate the speedup; otherwise, the CSV file may contain missing or incomplete speedup values.
 
