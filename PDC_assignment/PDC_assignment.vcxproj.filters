@@ -48,7 +48,6 @@
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="run_tests.py" />
     <None Include="result_averaging.py" />
     <None Include="run_test_all.py" />
     <None Include="run_test_baseline.py" />

@@ -14,6 +14,8 @@ EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
 
 DATASET_URL = "https://github.com/queenie9090/PDC_assignment/archive/refs/heads/main.zip"
 
+DATASET_FOLDER_NAME = "dataset_ordered"
+
 SCALE_DOWN = 0.5
 SCALE_UP = 1.5
 
