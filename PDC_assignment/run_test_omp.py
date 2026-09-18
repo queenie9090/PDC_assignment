@@ -1,12 +1,18 @@
 import os
 import subprocess
 import re
+import urllib.request
+import zipfile
+import shutil
+import tempfile
 import pandas as pd
 from PIL import Image
 
 DATASET_DIR = "./dataset_ordered"
 OUTPUT_DIR = "./output_images"
 EXE_PATH = r"..\x64\Release\PDC_assignment.exe"
+
+DATASET_URL = "https://github.com/queenie9090/PDC_assignment/archive/refs/heads/main.zip"
 
 SCALE_DOWN = 0.5
 SCALE_UP = 1.5
@@ -33,6 +39,111 @@ SUPPORTED_FORMATS = (".jpg", ".jpeg", ".png")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def ensure_dataset():
+
+    os.makedirs(DATASET_DIR, exist_ok=True)
+
+    existing_images = [
+        f for f in os.listdir(DATASET_DIR)
+        if f.lower().endswith(SUPPORTED_FORMATS)
+    ]
+
+    if existing_images:
+        print(
+            f"Dataset already available "
+            f"({len(existing_images)} images)."
+        )
+        print("Skipping dataset download.")
+        print()
+        return True
+
+    print("=" * 60)
+    print("DATASET NOT FOUND")
+    print("=" * 60)
+    print("Dataset folder is empty.")
+    print("Downloading dataset from GitHub...")
+    print()
+
+    temp_dir = tempfile.mkdtemp()
+    zip_path = os.path.join(temp_dir, "dataset.zip")
+    extract_path = os.path.join(temp_dir, "extracted")
+
+    try:
+        urllib.request.urlretrieve(
+            DATASET_URL,
+            zip_path
+        )
+
+        print("Download completed.")
+        print("Extracting dataset...")
+
+        with zipfile.ZipFile(zip_path, "r") as zip_file:
+            zip_file.extractall(extract_path)
+
+        dataset_source = None
+
+        for root, dirs, files in os.walk(extract_path):
+
+            if os.path.basename(root) == DATASET_FOLDER_NAME:
+                dataset_source = root
+                break
+
+        if dataset_source is None:
+            print(
+                f"ERROR: Could not find "
+                f"'{DATASET_FOLDER_NAME}' "
+                f"inside downloaded repository."
+            )
+            return False
+
+        copied_images = 0
+
+        for file_name in os.listdir(dataset_source):
+
+            if file_name.lower().endswith(SUPPORTED_FORMATS):
+
+                source_file = os.path.join(
+                    dataset_source,
+                    file_name
+                )
+
+                destination_file = os.path.join(
+                    DATASET_DIR,
+                    file_name
+                )
+
+                shutil.copy2(
+                    source_file,
+                    destination_file
+                )
+
+                copied_images += 1
+
+        if copied_images == 0:
+            print("ERROR: No images found in downloaded dataset.")
+            return False
+
+        print(
+            f"Dataset ready: "
+            f"{copied_images} images downloaded."
+        )
+        print(
+            f"Saved to: {DATASET_DIR}"
+        )
+        print()
+
+        return True
+
+    except Exception as e:
+        print("ERROR: Dataset download failed.")
+        print(e)
+        return False
+
+    finally:
+        shutil.rmtree(
+            temp_dir,
+            ignore_errors=True
+        )
 
 def get_image_information(img_path):
     try:
@@ -361,6 +472,10 @@ def run_benchmark(
 
 
 if __name__ == "__main__":
+
+    if not ensure_dataset():
+        print("Benchmark cannot start because dataset is unavailable.")
+        raise SystemExit(1)
 
     run_benchmark(
         SCALE_DOWN,

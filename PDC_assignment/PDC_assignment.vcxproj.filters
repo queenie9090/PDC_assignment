@@ -48,24 +48,13 @@
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="run_test_cuda.py">
-      <Filter>Source Files</Filter>
-    </None>
+    <None Include="run_tests.py" />
+    <None Include="result_averaging.py" />
+    <None Include="run_test_all.py" />
+    <None Include="run_test_baseline.py" />
+    <None Include="run_test_cuda.py" />
+    <None Include="run_test_mpi.py" />
+    <None Include="run_test_omp.py" />
     <None Include="app.py" />
-    <None Include="run_test_omp.py">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="run_test_mpi.py">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="run_test_baseline.py">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="result_averaging.py">
-      <Filter>Source Files</Filter>
-    </None>
-    <None Include="run_test_all.py">
-      <Filter>Source Files</Filter>
-    </None>
   </ItemGroup>
 </Project>
