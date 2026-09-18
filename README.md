@@ -82,6 +82,7 @@ Command To run:
 8. python result_averaging.py   (Averages 3 result csv files)
 
 **Remark: If you plan to run only one parallel implementation (OpenMP, MPI, or CUDA), please run the baseline benchmark first. The baseline results are required to calculate the speedup; otherwise, the CSV file may contain missing or incomplete speedup values.
+**Result Files:** Test scripts generate CSV files with default names (e.g., `benchmark_downscale_0.5x.csv`). For averaging, rename the three teammates' results with `M1_`, `M2_`, and `M3_` prefixes and place them in the same path before running `result_averaging.py`.
 
 If you encounter a ModuleNotFoundError when running the Python scripts, install the required Python packages using:
 1. pip install pandas
